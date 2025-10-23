@@ -5,7 +5,7 @@ tqdm
 lmdb
 torch
 torchvision
-e3nn==0.3.0
+e3nn
 matplotlib
 healpy
 scikit-image
