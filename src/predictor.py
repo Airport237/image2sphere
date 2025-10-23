@@ -4,8 +4,7 @@ import time
 from torch import Tensor
 import numpy as np
 import torch.nn as nn
-import e3nn
-from e3nn import o3
+from e3nn import o3, nn
 
 from src import so3_utils
 from src.models import (
@@ -76,7 +75,7 @@ class I2S(BaseSO3Predictor):
         self.o3_conv = o3.Linear(irreps_in, so3_utils.so3_irreps(lmax),
                                  f_in=sphere_fdim, f_out=f_hidden, internal_weights=False)
 
-        self.so3_activation = e3nn.nn.SO3Activation(lmax, lmax, torch.relu, 10)
+        self.so3_activation = nn.SO3Activation(lmax, lmax, torch.relu, 10)
         so3_grid = so3_utils.so3_near_identity_grid()
         self.so3_conv = SO3Convolution(f_hidden, 1, lmax, so3_grid)
 
