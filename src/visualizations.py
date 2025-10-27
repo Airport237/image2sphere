@@ -8,16 +8,27 @@ from e3nn import o3
 def plot_image(fig, ax,
                image: torch.tensor,
                vpad=60,
-              ):
+               ):
     image = torch.nn.functional.pad(image, (0, 0, vpad, vpad), 'constant', 1)
-    ax.imshow(image.permute(1,2,0))
+    ax.imshow(image.permute(1, 2, 0))
     ax.axis('off')
 
 
 def plot_to_image(fig):
-    fig.canvas.draw()
-    rgb_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype='uint8')
-    rgb_array = rgb_array.reshape(fig.canvas.get_width_height()[::-1]+(3,))
+    """Convert a matplotlib figure to a numpy array"""
+    import io
+    from PIL import Image
+
+    # Save to buffer
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+
+    # Load as image
+    img = Image.open(buf)
+    rgb_array = np.array(img.convert('RGB'))
+
+    buf.close()
     plt.close(fig)
     return rgb_array
 
@@ -28,10 +39,10 @@ def plot_so3_distribution(probs: torch.Tensor,
                           fig=None,
                           ax=None,
                           display_threshold_probability=0.000005,
-                          prob_threshold: float=0.00001,
-                          show_color_wheel: bool=True,
+                          prob_threshold: float = 0.00001,
+                          show_color_wheel: bool = True,
                           canonical_rotation=torch.eye(3),
-                         ):
+                          ):
     '''
     Taken from https://github.com/google-research/google-research/blob/master/implicit_pdf/evaluation.py
     '''
@@ -40,9 +51,12 @@ def plot_so3_distribution(probs: torch.Tensor,
     def _show_single_marker(ax, rotation, marker, edgecolors=True, facecolors=False):
         alpha, beta, gamma = o3.matrix_to_angles(rotation)
         color = cmap(0.5 + gamma.repeat(2) / 2. / np.pi)[-1]
-        ax.scatter(alpha, beta-np.pi/2, s=2000, edgecolors=color, facecolors='none', marker=marker, linewidth=5)
-        ax.scatter(alpha, beta-np.pi/2, s=1500, edgecolors='k', facecolors='none', marker=marker, linewidth=2)
-        ax.scatter(alpha, beta-np.pi/2, s=2500, edgecolors='k', facecolors='none', marker=marker, linewidth=2)
+        ax.scatter(alpha, beta-np.pi/2, s=2000, edgecolors=color,
+                   facecolors='none', marker=marker, linewidth=5)
+        ax.scatter(alpha, beta-np.pi/2, s=1500, edgecolors='k',
+                   facecolors='none', marker=marker, linewidth=2)
+        ax.scatter(alpha, beta-np.pi/2, s=2500, edgecolors='k',
+                   facecolors='none', marker=marker, linewidth=2)
 
     if ax is None:
         fig = plt.figure(figsize=(8, 4), dpi=400)
@@ -59,7 +73,6 @@ def plot_so3_distribution(probs: torch.Tensor,
     beta += R * np.sin(gamma)
 
     which_to_display = (probs > display_threshold_probability)
-
 
     # Display the distribution
     ax.scatter(alpha[which_to_display],
@@ -100,7 +113,8 @@ def plot_so3_distribution(probs: torch.Tensor,
 
 def plot_predictions(images, probs, rots, gt_rots=None, num=None, path=None):
     fig = plt.figure(figsize=(4.8, np.ceil(num/2)), dpi=300)
-    gs = GridSpec(int(np.ceil(num/2)), 4, width_ratios=[1,3,1,3], wspace=0, left=0, top=1, bottom=0, right=1)
+    gs = GridSpec(int(np.ceil(num/2)), 4,
+                  width_ratios=[1, 3, 1, 3], wspace=0, left=0, top=1, bottom=0, right=1)
 
     num = num or len(images)
     for i in range(num):
@@ -113,7 +127,7 @@ def plot_predictions(images, probs, rots, gt_rots=None, num=None, path=None):
             probs[i],
             rots,
             gt_rotation=gt_rots[i] if gt_rots is not None else None,
-            show_color_wheel=i==0,
+            show_color_wheel=i == 0,
         )
         ax1.imshow(img)
         ax1.axis('off')
