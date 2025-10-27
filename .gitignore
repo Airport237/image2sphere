@@ -1,3 +1,5 @@
 i2s
 pascal3d_checkpoint.pt
+modelnet10so3_checkpoint.pt
+modelnet10_test.npz
 __pycache__/
