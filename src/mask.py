@@ -44,7 +44,7 @@ def main():
     output = Path("output")
     output.mkdir(exist_ok=True)
 
-    images = list(assets.glob("t1.*")) + list(assets.glob("t2.*"))
+    images = list(assets.glob("crop*")) + list(assets.glob("t2.*"))
 
     for img_path in sorted(images):
         out_path = output / f"{img_path.stem}_contour.png"
