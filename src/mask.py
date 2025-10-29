@@ -44,6 +44,7 @@ def main():
     output = Path("output")
     output.mkdir(exist_ok=True)
 
+    # images to mask
     images = list(assets.glob("crop*")) + list(assets.glob("t2.*"))
 
     for img_path in sorted(images):
