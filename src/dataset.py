@@ -136,8 +136,10 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.maskfolder  = 'masks_192x128'
         self.stylefolder = 'styles_768x512_RGB'
 
+        self.domain = self.split
+
         # Load CSV & determine image domain
-        self.csv, self.domain = self._load_csv('/content/speedplus_data/sunlamp/sunlamp/labels/test.csv')
+        self.csv = pd.read_csv(join(self.root, split, split, 'labels', 'test.csv'), header=None)
 
         # Image transforms
         self.transforms = transforms
