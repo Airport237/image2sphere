@@ -39,7 +39,7 @@ def create_dataloaders(args):
                                  set_number=args.dataset_name.count('I'),
                                  num_views=5000)
     elif args.dataset_name == 'speed+':
-        train_set = 
+        train_set =
         test_set = 
 
     else:
@@ -129,6 +129,8 @@ def create_model(args):
                 eval_grid_rec_level=args.eval_grid_rec_level,
                 eval_use_gradient_ascent=args.eval_use_gradient_ascent,
                 include_class_label=args.include_class_label,
+                pred_translation=True,  # set them hardcoded for now
+                trans_hidden=256,
                 ).to(args.device)
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
