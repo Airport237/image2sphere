@@ -1,7 +1,7 @@
 from src.predictor import I2S
 from src.so3_utils import rotation_error, nearest_rotmat
 from src.pascal_dataset import Pascal3D
-from src.dataset import ModelNet10Dataset, SymsolDataset
+from src.dataset import ModelNet10Dataset, SPEEDPLUSDataset, SymsolDataset
 import re
 import argparse
 import os
@@ -39,9 +39,14 @@ def create_dataloaders(args):
                                  set_number=args.dataset_name.count('I'),
                                  num_views=5000)
     elif args.dataset_name == 'speed+':
-        train_set =
-        test_set = 
-
+        train_set = SPEEDPLUSDataset(
+            root=args.dataset_path,
+            split='train',
+        )
+        test_set = SPEEDPLUSDataset(
+            root=args.dataset_path,
+            split='test',
+        )
     else:
         raise TypeError('Invalid dataset name')
 

@@ -55,29 +55,31 @@ class I2S(BaseSO3Predictor):
                  eval_grid_rec_level: int = 5,
                  eval_use_gradient_ascent: bool = False,
                  include_class_label: bool = False,
-                 # Translation head params
                  pred_translation: bool = False,
                  trans_hidden: int = 256,
                  ):
         super().__init__(num_classes, encoder, pool_features=False)
 
-        proj_input_shape = list(self.encoder.output_shape)
+        self.pred_translation = pred_translation
+        self.lmax = lmax
         self.include_class_label = include_class_label
+
+        proj_input_shape = list(self.encoder.output_shape)
         if self.include_class_label:
             proj_input_shape[0] += num_classes
 
-        # translation head stuff
-        # encoder.output_shape = (C, H, W)
-        if pred_translation:
+        # translation head (from encoder features only)
+        if self.pred_translation:
             c, h, w = self.encoder.output_shape
             self.translation_head = nn.Sequential(
-                # (B, C, H, W) -> (B, C, 1, 1) Do we want this?
-                nn.AdaptiveAvgPool2d(1),
-                nn.Flatten(),                 # (B, C, 1, 1) -> (B, C)
+                nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
+                nn.Flatten(),              # (B, C, 1, 1) -> (B, C)
                 nn.Linear(c, trans_hidden),
                 nn.ReLU(inplace=True),
                 nn.Linear(trans_hidden, 3),   # (x, y, z)
             )
+        else:
+            self.translation_head = None
 
         # projection stuff
         self.projector = {
@@ -91,10 +93,14 @@ class I2S(BaseSO3Predictor):
             'harmonicS2': HarmonicS2Features,
         }[feature_sphere_mode](sphere_fdim, lmax, f_out=f_hidden)
 
-        self.lmax = lmax
         irreps_in = so3_utils.s2_irreps(lmax)
-        self.o3_conv = o3.Linear(irreps_in, so3_utils.so3_irreps(lmax),
-                                 f_in=sphere_fdim, f_out=f_hidden, internal_weights=False)
+        self.o3_conv = o3.Linear(
+            irreps_in,
+            so3_utils.so3_irreps(lmax),
+            f_in=sphere_fdim,
+            f_out=f_hidden,
+            internal_weights=False
+        )
 
         self.so3_activation = e3nn.nn.SO3Activation(lmax, lmax, torch.relu, 10)
         so3_grid = so3_utils.so3_near_identity_grid()
@@ -110,11 +116,12 @@ class I2S(BaseSO3Predictor):
 
         output_xyx = so3_utils.so3_healpix_grid(rec_level=train_grid_rec_level)
         self.register_buffer(
-            "output_wigners", so3_utils.flat_wigner(
-                lmax, *output_xyx).transpose(0, 1)
+            "output_wigners",
+            so3_utils.flat_wigner(lmax, *output_xyx).transpose(0, 1)
         )
         self.register_buffer(
-            "output_rotmats", o3.angles_to_matrix(*output_xyx)
+            "output_rotmats",
+            o3.angles_to_matrix(*output_xyx)
         )
 
         output_xyx = so3_utils.so3_healpix_grid(rec_level=eval_grid_rec_level)
@@ -127,11 +134,15 @@ class I2S(BaseSO3Predictor):
         self.eval_rotmats = o3.angles_to_matrix(*output_xyx)
 
     def forward(self, x, o, return_translation: bool = False):
-        feat = self.encoder(x)            
-        # pred translation output
-        if return_translation:
-            trans_pred = self.translation_head(feat)
-        
+        # encoder features
+        feat = self.encoder(x)  # (B, C, H, W)
+
+        # translation head from encoder features only
+        trans_pred = None
+        if self.pred_translation and self.translation_head is not None:
+            trans_pred = self.translation_head(feat)  # (B, 3)
+
+        # rotation path input
         proj_in = feat
         if self.include_class_label:
             o_oh = nn.functional.one_hot(
@@ -141,16 +152,63 @@ class I2S(BaseSO3Predictor):
                 1, 1, feat.size(-2), feat.size(-1)
             )
             proj_in = torch.cat((proj_in, o_oh_fmap), dim=1)
+
+        # projection to S2
         x = self.projector(proj_in)
+
+        # S2 -> SO(3) lifting
         weight, _ = self.feature_sphere()
         x = self.o3_conv(x, weight=weight)
+
         x = self.so3_activation(x)
-        x = self.so3_conv(x)
+
+        # SO(3) convolution
+        x = self.so3_conv(x)  # SO(3) Fourier coefficients
 
         if return_translation:
             return x, trans_pred
 
         return x
+
+    def compute_loss(self, img, cls, rot, trans=None, lambda_trans: float = 1.0):
+        """
+        img:   (B, 3, H, W)
+        cls:   (B, 1)
+        rot:   ground-truth rotation (as expected by nearest_rotmat)
+        trans: (B, 3) translation vector, if available
+        """
+        if self.pred_translation and trans is not None:
+            x, trans_pred = self.forward(img, cls, return_translation=True)
+        else:
+            x = self.forward(img, cls)
+            trans_pred = None
+
+        # rotation classification loss
+        grid_signal, rotmats = self.query_train_grid(x, rot)
+        rot_id = so3_utils.nearest_rotmat(rot, rotmats)
+        rot_loss = nn.CrossEntropyLoss()(grid_signal, rot_id)
+
+        with torch.no_grad():
+            pred_id = grid_signal.max(dim=1)[1]
+            pred_rotmat = rotmats[pred_id]
+            rot_acc = so3_utils.rotation_error(rot, pred_rotmat)  # (B,)
+
+        # translation regression loss (optional)
+        if self.pred_translation and trans is not None:
+            trans_loss = nn.functional.mse_loss(trans_pred, trans)
+            loss = rot_loss + lambda_trans * trans_loss
+        else:
+            trans_loss = torch.tensor(0.0, device=img.device)
+            loss = rot_loss
+
+        stats = {
+            "rot_acc": rot_acc.cpu().numpy(),   # per-sample rotation error (radians)
+            "rot_loss": rot_loss.item(),
+            "trans_loss": trans_loss.item(),
+        }
+
+        return loss, stats
+
 
 
     def query_train_grid(self, x, gt_rot=None):
@@ -215,29 +273,4 @@ class I2S(BaseSO3Predictor):
 
         return nn.Softmax(dim=1)(probs)
 
-    def compute_loss(self, img, cls, rot, trans, lambda_trans: float = 1.0):
-        # rotation features and translation prediction
-        x, trans_pred = self.forward(img, cls, return_translation=True)
-
-        # rotation loss
-        grid_signal, rotmats = self.query_train_grid(x, rot)
-        rot_id = so3_utils.nearest_rotmat(rot, rotmats)
-        rot_loss = nn.CrossEntropyLoss()(grid_signal, rot_id)
-
-        with torch.no_grad():
-            pred_id = grid_signal.max(dim=1)[1]
-            pred_rotmat = rotmats[pred_id]
-            rot_acc = so3_utils.rotation_error(rot, pred_rotmat)
-
-        # ttrrans loss stuff
-        # trans shape: (B, 3)
-        trans_loss = nn.functional.mse_loss(trans_pred, trans)
-
-        loss = rot_loss + lambda_trans * trans_loss
-        stats = {
-            "rot_acc": rot_acc.cpu().numpy(),
-            "rot_loss": rot_loss.item(),
-            "trans_loss": trans_loss.item(),
-        }
-
-        return loss, stats
+    
