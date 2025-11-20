@@ -107,85 +107,76 @@ class SymsolDataset(torch.utils.data.Dataset):
 
 
 class SPEEDPLUSDataset(torch.utils.data.Dataset):
-    """ PyTorch Dataset class for SPEED+
-    """
-    def __init__(self,
-                 root: str,
-                 split: str = 'train',
-                 transforms=None,
+    def __init__(
+        self,
+        root: str,
+        split: str = "lightbox",   # 'lightbox' or 'sunlamp'
+        transforms=None,
     ):
-        self.root        = root                # e.g. args.dataset_path + '/speedplus_data'
-        self.split       = split               # 'train' or 'test'
-        self.is_train    = split == 'train'
-        self.image_size  = [1900, 1200]        # original
-        self.input_size  = [768, 512]          # CNN input size (W, H)
-
-        self.imagefolder = 'images_768x512_RGB'
-        self.maskfolder  = 'masks_192x128'
-        self.stylefolder = 'styles_768x512_RGB'
-
-        # Load CSV & determine image domain
-        self.csv, self.domain = self._load_csv(
-            os.path.join(self.root, 'sunlamp', 'sunlamp', 'labels', 'test.csv')
-        )
-
+        self.root = root            
+        
+        self.split = split          
         self.transforms = transforms
 
-        # store per-sample data
-        self.imgs   = []
-        self.rots   = []   # rotation matrices 3x3
-        self.trans  = []   # translation vectors (3,)
+        self.imagefolder = "images_768x512_RGB"
+        self.input_size = [768, 512]   # (W, H) for resizing if needed
 
-        for index in range(len(self.csv)):
-            rot_q = np.array(self.csv.iloc[index, 1:5], dtype=np.float32)   # [qw, qx, qy, qz]
-            t     = np.array(self.csv.iloc[index, 5:8], dtype=np.float32)   # (3,)
+        # ---- Load CSV with filenames + labels ----
+        csv_path = os.path.join(self.root, self.split, "labels", "test.csv")
+        print(f"Loading SPEED+ CSV from: {csv_path}")
+        self.csv = pd.read_csv(csv_path, header=None)
 
-            R = self.quat2dcm(rot_q)                                        # (3, 3)
-
-            imgpath = join(self.root, self.domain, self.domain,
-                           self.imagefolder, self.csv.iloc[index, 0])
-            img_bgr = cv2.imread(imgpath, cv2.IMREAD_COLOR)                 # HxWx3 BGR
-
-            # optional: resize to input_size
-            img_bgr = cv2.resize(img_bgr, tuple(self.input_size))           # (H=512, W=768)
-
-            img = torch.from_numpy(img_bgr).to(torch.float32) / 255.0       # HxWx3
-            img = img.permute(2, 0, 1)                                      # 3xHxW
-
-            self.imgs.append(img)
-            self.rots.append(torch.from_numpy(R))                           # 3x3
-            self.trans.append(torch.from_numpy(t))                          # 3,
+        # DEBUG:
+        self.csv = self.csv.iloc[:32].reset_index(drop=True)
 
         # make it look like other datasets
         self.num_classes = 1
-        self.class_names = ('tango',)   # or any name, you only have 1 class
+        self.class_names = ("tango",)
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.csv)
 
     def __getitem__(self, index):
-        img   = self.imgs[index]
-        rot   = self.rots[index]        # 3x3
-        trans = self.trans[index]       # 3,
+        row = self.csv.iloc[index]
+        filename = row[0]
+        rot_q = np.array(row[1:5], dtype=np.float32)   # [qw, qx, qy, qz]
+        t     = np.array(row[5:8], dtype=np.float32)   # (3,)
 
-        # dummy single class; shape (1,) to match others
-        cls = torch.zeros(1, dtype=torch.long)
+        # rotation matrix from quaternion
+        R = self.quat2dcm(rot_q)                       # (3, 3)
 
-        return dict(img=img, cls=cls, rot=rot, trans=trans)
+        # load preprocessed image
+        img_path = os.path.join(self.root, self.split, self.imagefolder, filename)
+        img_bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)  # H x W x 3
+
+        if img_bgr is None:
+            raise FileNotFoundError(f"Image not found: {img_path}")
+
+        # safety resize
+        img_bgr = cv2.resize(img_bgr, tuple(self.input_size))  # (W=768, H=512)
+
+        img = torch.from_numpy(img_bgr).to(torch.float32) / 255.0  # H x W x 3
+        img = img.permute(2, 0, 1)                                # 3 x H x W
+
+        rot = torch.from_numpy(R)        # 3 x 3
+        trans = torch.from_numpy(t)      # 3,
+
+        cls = torch.zeros(1, dtype=torch.long)  # single dummy class
+
+        sample = dict(img=img, cls=cls, rot=rot, trans=trans)
+
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+
+        return sample
 
     @property
     def img_shape(self):
         # (C, H, W)
         return (3, self.input_size[1], self.input_size[0])
 
-    def _load_csv(self, csv_path):
-        csv = pd.read_csv(csv_path, header=None)
-        # in your original code, domain == split; keep it simple
-        domain = self.split
-        return csv, domain
-
     def quat2dcm(self, q):
-        """ Computing direction cosine matrix from quaternion, adapted from PyNav. """
+        """Computing direction cosine matrix from quaternion [qw, qx, qy, qz]."""
         q = q / np.linalg.norm(q)
 
         q0, q1, q2, q3 = q

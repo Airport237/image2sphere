@@ -60,6 +60,7 @@ class I2S(BaseSO3Predictor):
                  ):
         super().__init__(num_classes, encoder, pool_features=False)
 
+        print("in model create")
         self.pred_translation = pred_translation
         self.lmax = lmax
         self.include_class_label = include_class_label

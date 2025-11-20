@@ -33,20 +33,22 @@ def create_dataloaders(args):
         train_set = SymsolDataset(args.dataset_path,
                                   train=True,
                                   set_number=args.dataset_name.count('I'),
-                                  num_views=int(re.findall('\d+', args.dataset_name)[0]))
+                                  num_views=int(re.findall(r'\d+', args.dataset_name)[0]))
         test_set = SymsolDataset(args.dataset_path,
                                  train=False,
                                  set_number=args.dataset_name.count('I'),
                                  num_views=5000)
     elif args.dataset_name == 'speed+':
-        train_set = SPEEDPLUSDataset(
-            root=args.dataset_path,
-            split='train',
-        )
-        test_set = SPEEDPLUSDataset(
-            root=args.dataset_path,
-            split='test',
-        )
+      print("in speedplus")
+      train_set = SPEEDPLUSDataset(
+          root=args.dataset_path,
+          split='lightbox',   # domain name
+      )
+      print("aftter train")
+      test_set = SPEEDPLUSDataset(
+          root=args.dataset_path,
+          split='lightbox',
+      )
     else:
         raise TypeError('Invalid dataset name')
 
@@ -148,6 +150,7 @@ def create_model(args):
 def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
+    print("starting main")
     if args.device != 'cpu':
         torch.cuda.manual_seed(args.seed)
 
@@ -173,8 +176,10 @@ def main(args):
 
     train_loader, test_loader, args = create_dataloaders(args)
 
+    print("post trainloader")
     model = create_model(args)
 
+    print("post model creatiion")
     optimizer = torch.optim.SGD(model.parameters(),
                                 lr=args.lr_initial,
                                 momentum=args.sgd_momentum,
@@ -190,7 +195,8 @@ def main(args):
         # read the log to find the epoch
         checkpoint = torch.load(os.path.join(args.fdir, "checkpoint.pt"))
         if checkpoint['done']:
-            exit()
+          print("in checkpoint")
+          exit()
 
         starting_epoch = checkpoint['epoch'] + 1
         epoch = starting_epoch
@@ -202,6 +208,7 @@ def main(args):
         starting_epoch = 1
 
     data = []
+    print("befor eepocs")
     for epoch in range(starting_epoch, args.num_epochs+1):
         train_loss = 0
         train_acc = []
@@ -349,6 +356,7 @@ if __name__ == "__main__":
                                  'symsolII-50000',  # symsol sphX with 50k training views each
                                  'symsolIII-50000',  # symsol cylO with 50k training views each
                                  'symsolIIII-50000',  # symsol tetX with 50k training views each
+                                 'speed+', #Stanford speed+ dataset (a small sample)
                                  ]
                         )
 
