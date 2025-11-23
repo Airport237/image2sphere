@@ -148,7 +148,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         if img_bgr is None:
             raise FileNotFoundError(f"Image not found: {img_path}")
 
-        # 🔹 Resize to 224x224 (W,H) so ResNet output is 7x7
+        #Resize to 224x224 (W,H) so ResNet output is 7x7
         img_bgr = cv2.resize(img_bgr, tuple(self.input_size))
 
         img = torch.from_numpy(img_bgr).to(torch.float32) / 255.0   # H x W x 3
