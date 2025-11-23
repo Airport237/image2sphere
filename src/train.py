@@ -39,16 +39,16 @@ def create_dataloaders(args):
                                  set_number=args.dataset_name.count('I'),
                                  num_views=5000)
     elif args.dataset_name == 'speed+':
-      print("in speedplus")
-      train_set = SPEEDPLUSDataset(
-          root=args.dataset_path,
-          split='lightbox',   # domain name
-      )
-      print("aftter train")
-      test_set = SPEEDPLUSDataset(
-          root=args.dataset_path,
-          split='lightbox',
-      )
+        print("in speedplus")
+        train_set = SPEEDPLUSDataset(
+            root=args.dataset_path,
+            split='lightbox',   # domain name
+        )
+        print("aftter train")
+        test_set = SPEEDPLUSDataset(
+            root=args.dataset_path,
+            split='lightbox',
+        )
     else:
         raise TypeError('Invalid dataset name')
 
@@ -105,6 +105,7 @@ def evaluate_error(args, model, test_loader):
     model.eval()
     errors = []
     clss = []
+
     for batch_idx, batch in enumerate(test_loader):
         batch = {k: v.to(args.device) for k, v in batch.items()}
         pred_rotmat = model.predict(batch['img'], batch['cls']).cpu()
@@ -112,7 +113,8 @@ def evaluate_error(args, model, test_loader):
         err = rotation_error(pred_rotmat, gt_rotmat)
 
         errors.append(err.numpy())
-        clss.append(batch['cls'].cpu().numpy().reshape(-1)) 
+        # make sure we always have a 1D array so concatenate works
+        clss.append(batch['cls'].cpu().numpy().reshape(-1))
 
     errors = np.concatenate(errors)
     clss = np.concatenate(clss)
@@ -123,7 +125,6 @@ def evaluate_error(args, model, test_loader):
         per_class_err[args.class_names[i]] = errors[mask]
 
     np.save(os.path.join(args.fdir, 'eval.npy'), per_class_err)
-
 
 
 def create_model(args):
@@ -180,44 +181,59 @@ def main(args):
 
     print("post trainloader")
     model = create_model(args)
-
     print("post model creatiion")
-    optimizer = torch.optim.SGD(model.parameters(),
-                                lr=args.lr_initial,
-                                momentum=args.sgd_momentum,
-                                weight_decay=args.weight_decay,
-                                nesterov=bool(args.use_nesterov),
-                                )
 
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer,
-                                                   args.lr_step_size,
-                                                   args.lr_decay_rate)
+    optimizer = torch.optim.SGD(
+        model.parameters(),
+        lr=args.lr_initial,
+        momentum=args.sgd_momentum,
+        weight_decay=args.weight_decay,
+        nesterov=bool(args.use_nesterov),
+    )
 
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(
+        optimizer,
+        args.lr_step_size,
+        args.lr_decay_rate
+    )
+
+    # resume if checkpoint exists (allow shape mismatches when you've changed the model)
     if os.path.exists(os.path.join(args.fdir, "checkpoint.pt")):
-        # read the log to find the epoch
-        checkpoint = torch.load(os.path.join(args.fdir, "checkpoint.pt"))
-        if checkpoint['done']:
-          print("in checkpoint")
-          exit()
+        checkpoint = torch.load(os.path.join(args.fdir, "checkpoint.pt"),
+                                map_location=args.device)
+        if checkpoint.get('done', False):
+            print("Found completed checkpoint; exiting.")
+            return
 
         starting_epoch = checkpoint['epoch'] + 1
-        epoch = starting_epoch
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
+        try:
+            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
+            print("Loaded checkpoint with strict=False (ignoring mismatched layers).")
+        except RuntimeError as e:
+            print("Could not load checkpoint state_dict:", e)
+            starting_epoch = 1
+
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            lr_scheduler.load_state_dict(checkpoint['lr_scheduler_state_dict'])
+        except Exception as e:
+            print("Could not load optimizer / scheduler state:", e)
         model.train()
     else:
         starting_epoch = 1
 
     data = []
     print("befor eepocs")
-    for epoch in range(starting_epoch, args.num_epochs+1):
-        train_loss = 0
-        train_acc = []
+    for epoch in range(starting_epoch, args.num_epochs + 1):
+        # --------------------
+        # Train
+        # --------------------
+        train_loss = 0.0
+        train_rot_errs = []      # per-sample rotation errors (radians)
+        train_trans_losses = []  # scalar per-batch translation losses
         time_before_epoch = time.perf_counter()
-        train_rot_errs = []   # per-sample rotation errors
-        train_trans_losses = []
 
+        model.train()
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             loss, stats = model.compute_loss(**batch)
@@ -227,22 +243,21 @@ def main(args):
             optimizer.step()
 
             train_loss += loss.item()
-
-            # stats["rot_acc"] is e.g. numpy array of shape (B,)
             train_rot_errs.append(stats["rot_acc"])
             train_trans_losses.append(stats["trans_loss"])
 
-        train_loss /= batch_idx + 1
+        # aggregate train stats
+        train_loss /= (batch_idx + 1)
+        train_rot_errs = np.concatenate(train_rot_errs)          # radians
+        train_rot_err_deg_median = np.degrees(np.median(train_rot_errs))
+        train_rot_err_deg_mean = np.degrees(np.mean(train_rot_errs))
+        train_trans_losses = np.array(train_trans_losses)
+        train_trans_loss_mean = float(train_trans_losses.mean())
 
-        # concat all batches, then median over all samples
-        train_rot_errs = np.concatenate(
-            train_rot_errs)   # shape (N_train_samples,)
-        train_acc_median = np.median(train_rot_errs)      # still in radians
-
-        # hmm, also log mean translation loss?
-        # train_trans_loss_mean = np.mean(train_trans_losses)
-
-        test_loss = 0
+        # --------------------
+        # Eval
+        # --------------------
+        test_loss = 0.0
         test_rot_errs = []
         test_trans_losses = []
         test_cls = []
@@ -256,65 +271,122 @@ def main(args):
             test_loss += loss.item()
             test_rot_errs.append(stats["rot_acc"])
             test_trans_losses.append(stats["trans_loss"])
-            test_cls.append(batch['cls'].squeeze(0).cpu().numpy())
+            test_cls.append(batch['cls'].cpu().numpy().reshape(-1))
 
-        model.train()
-
-        test_loss /= batch_idx + 1
-
+        test_loss /= (batch_idx + 1)
         test_rot_errs = np.concatenate(test_rot_errs)
-        test_acc_median = np.median(test_rot_errs)
-        test_trans_loss_mean = np.mean(test_trans_losses)
+        test_rot_err_deg_median = np.degrees(np.median(test_rot_errs))
+        test_rot_err_deg_mean = np.degrees(np.mean(test_rot_errs))
+        test_trans_losses = np.array(test_trans_losses)
+        test_trans_loss_mean = float(test_trans_losses.mean())
+        test_cls = np.concatenate(test_cls)
 
+        # per-class rotation error stats (in degrees)
         per_class_err = {}
-        test_cls = np.array(test_cls).flatten()
-
         for i, cls_name in enumerate(args.class_names):
             mask = test_cls == i
-            per_class_err[cls_name] = f"{np.degrees(np.median(test_rot_errs[mask])):.1f}"
+            if mask.any():
+                per_class_err[cls_name] = f"{np.degrees(np.median(test_rot_errs[mask])):.1f}"
+            else:
+                per_class_err[cls_name] = "nan"
 
         logger.info(str(per_class_err))
 
-        data.append(dict(epoch=epoch,
-                         time_elapsed=time.perf_counter() - time_before_epoch,
-                         train_loss=train_loss,
-                         test_loss=test_loss,
-                         train_acc_median=train_acc_median,
-                         test_acc_median=test_acc_median,
-                         lr=optimizer.param_groups[0]['lr'],
-                         ))
+        data.append(dict(
+            epoch=epoch,
+            time_elapsed=time.perf_counter() - time_before_epoch,
+            train_loss=train_loss,
+            test_loss=test_loss,
+            train_acc_median=np.median(train_rot_errs),
+            test_acc_median=np.median(test_rot_errs),
+            lr=optimizer.param_groups[0]['lr'],
+        ))
         lr_scheduler.step()
 
         # checkpointing
-        torch.save({'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'lr_scheduler_state_dict': lr_scheduler.state_dict(),
-                    'done': False,
-                    }, os.path.join(args.fdir, "checkpoint.pt"))
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'lr_scheduler_state_dict': lr_scheduler.state_dict(),
+            'done': False,
+        }, os.path.join(args.fdir, "checkpoint.pt"))
 
         log_str = (
             f"Epoch {epoch}/{args.num_epochs} | "
-            f"LOSS={train_loss:.4f}<{test_loss:.4f}> "
-            f"ROT ERR={np.degrees(test_acc_median):.2f}° | "
+            f"LOSS train={train_loss:.4f}, test={test_loss:.4f} | "
+            f"ROT-ERR train={train_rot_err_deg_median:.1f}°, "
+            f"test={test_rot_err_deg_median:.1f}° | "
+            f"T-LOSS train={train_trans_loss_mean:.4f}, "
+            f"test={test_trans_loss_mean:.4f} | "
             f"time={time.perf_counter() - time_before_epoch:.1f}s | "
-            f"lr={lr_scheduler.get_last_lr()[0]:.1e} | "
-            f"T-LOSS={test_trans_loss_mean:.4f}"
+            f"lr={lr_scheduler.get_last_lr()[0]:.1e}"
         )
 
         logger.info(log_str)
         time_before_epoch = time.perf_counter()
 
+    # quick sanity check on a few predictions
+    print("\n=== Debugging predictions on test set ===")
+    debug_predictions(args, model, test_loader)
+
     if args.dataset_name.find('symsol') > -1:
         evaluate_ll(args, model, test_loader)
     else:
-        # median rotation error
         evaluate_error(args, model, test_loader)
 
-    torch.save({'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'done': True,
-                }, os.path.join(args.fdir, "checkpoint.pt"))
+    torch.save({
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'done': True,
+    }, os.path.join(args.fdir, "checkpoint.pt"))
+
+
+def debug_predictions(args, model, loader, n_samples=5):
+    """Print a few GT vs predicted rotations/translations to see if things are sane."""
+    model.eval()
+    printed = 0
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(args.device) for k, v in batch.items()}
+
+            # 🔹 Use the same path as evaluate_error (this we know works)
+            rot_pred = model.predict(batch['img'], batch['cls'])  # (B, 3, 3)
+            rot_gt = batch['rot']                               # (B, 3, 3)
+
+            # translation, if available
+            trans_gt = batch.get('trans', None)
+            trans_pred = None
+
+            # try to get translation via forward, but don't break if not supported
+            try:
+                _, trans_pred = model.forward(
+                    batch['img'], batch['cls'], return_translation=True
+                )
+            except TypeError:
+                pass
+
+            # rotation error per sample (same as evaluate_error logic)
+            rot_err = rotation_error(rot_pred, rot_gt)       # radians
+            rot_err_deg = torch.rad2deg(rot_err)             # (B,)
+
+            bsz = rot_pred.size(0)
+            for i in range(bsz):
+                if printed >= n_samples:
+                    return
+
+                print(f"\nSample #{printed+1}")
+                print(f"  rot_err = {rot_err_deg[i].item():.1f}°")
+
+                if trans_gt is not None and trans_pred is not None:
+                    print(f"  GT trans:   {trans_gt[i].cpu().numpy()}")
+                    print(f"  Pred trans: {trans_pred[i].cpu().numpy()}")
+
+                printed += 1
+
+        if printed == 0:
+            print("No samples found in loader for debug_predictions.")
 
 
 if __name__ == "__main__":
@@ -358,7 +430,8 @@ if __name__ == "__main__":
                                  'symsolII-50000',  # symsol sphX with 50k training views each
                                  'symsolIII-50000',  # symsol cylO with 50k training views each
                                  'symsolIIII-50000',  # symsol tetX with 50k training views each
-                                 'speed+', #Stanford speed+ dataset (a small sample)
+                                 # Stanford speed+ dataset (a small sample)
+                                 'speed+',
                                  ]
                         )
 
