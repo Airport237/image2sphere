@@ -42,13 +42,14 @@ def create_dataloaders(args):
         print("in speedplus")
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
-            split='lightbox',
-            train=True,
+            split='lightbox',   # domain name
+            train=True
         )
         print("aftter train")
         test_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split='lightbox',
+            train=False
         )
     else:
         raise TypeError('Invalid dataset name')
@@ -354,6 +355,7 @@ def debug_predictions(args, model, loader, n_samples=5):
             rot_pred = model.predict(batch['img'], batch['cls'])  # (B, 3, 3)
             rot_gt = batch['rot']                               # (B, 3, 3)
 
+            # translation, if available
             trans_gt = batch.get('trans', None)
             trans_pred = None
             try:

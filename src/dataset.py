@@ -125,7 +125,13 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
 
         csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
         self.csv = pd.read_csv(csv_path, header=None)
+
+        if max_samples is not None and max_samples > 0:
+
+            self.csv = self.csv.iloc[:max_samples].reset_index(drop=True)
+
         N = len(self.csv)
+
         split_idx = int(train_ratio * N)
 
         if self.train:
@@ -133,10 +139,6 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         else:
             self.csv = self.csv.iloc[split_idx:].reset_index(drop=True)
         print(f"Loading SPEED+ CSV from: {csv_path}")
-        self.csv = pd.read_csv(csv_path, header=None)
-
-        if max_samples is not None and max_samples > 0:
-            self.csv = self.csv.iloc[:max_samples].reset_index(drop=True)
 
         self.num_classes = 1
         self.class_names = (split,)
