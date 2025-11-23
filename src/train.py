@@ -42,7 +42,7 @@ def create_dataloaders(args):
         print("in speedplus")
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
-            split='lightbox',   # domain name
+            split='synthetic',   # domain name
             train=True
         )
         print("aftter train")
