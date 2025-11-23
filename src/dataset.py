@@ -116,6 +116,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
         self.transforms = transforms
+        self.train = train
 
         # Make input 224x224 to match the I2S
         self.input_size = [224, 224]   # (W, H)
