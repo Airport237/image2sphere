@@ -11,12 +11,13 @@ import torch
 import torchvision
 from PIL import Image
 
+
 class ModelNet10Dataset(torch.utils.data.Dataset):
     def __init__(self,
                  dataset_path: str,
                  train: bool,
                  limited: bool = False,
-                ):
+                 ):
         name = f"modelnet10_{'train' if train else 'test'}.npz"
         if limited and train:
             name = name.replace('_', '_limited_')
@@ -24,9 +25,9 @@ class ModelNet10Dataset(torch.utils.data.Dataset):
         data = np.load(path)
 
         self.data = {
-            'img' : torch.from_numpy(data['imgs']).permute(0, 3, 1, 2),
-            'rot' : torch.from_numpy(data['rots']),
-            'cls' : torch.from_numpy(data['cat_ids']).unsqueeze(-1).long(),
+            'img': torch.from_numpy(data['imgs']).permute(0, 3, 1, 2),
+            'rot': torch.from_numpy(data['rots']),
+            'cls': torch.from_numpy(data['cat_ids']).unsqueeze(-1).long(),
         }
 
         self.num_classes = 10
@@ -37,7 +38,7 @@ class ModelNet10Dataset(torch.utils.data.Dataset):
         img = self.data['img'][index].to(torch.float32) / 255.
 
         if img.shape[0] != 3:
-            img = img.expand(3,-1,-1)
+            img = img.expand(3, -1, -1)
 
         class_index = self.data['cls'][index]
 
@@ -57,21 +58,22 @@ class SymsolDataset(torch.utils.data.Dataset):
     def __init__(self,
                  dataset_path: str,
                  train: bool,
-                 set_number: int=1,
-                 num_views: int=None,
-                ):
+                 set_number: int = 1,
+                 num_views: int = None,
+                 ):
         self.mode = 'train' if train else 'test'
         self.path = os.path.join(dataset_path, "symsol", self.mode)
         rotations_data = np.load(os.path.join(self.path, 'rotations.npz'))
         self.class_names = {
-            1 : ('tet', 'cube', 'icosa', 'cone', 'cyl'),
-            2 : ('sphereX',),#, 'cylO', 'sphereX'),
-            3 : ('cylO',),#, 'cylO', 'sphereX'),
-            4 : ('tetX',),#, 'cylO', 'sphereX'),
+            1: ('tet', 'cube', 'icosa', 'cone', 'cyl'),
+            2: ('sphereX',),  # , 'cylO', 'sphereX'),
+            3: ('cylO',),  # , 'cylO', 'sphereX'),
+            4: ('tetX',),  # , 'cylO', 'sphereX'),
         }[set_number]
         self.num_classes = len(self.class_names)
 
-        self.rotations_data = [rotations_data[c][:num_views] for c in self.class_names]
+        self.rotations_data = [rotations_data[c][:num_views]
+                               for c in self.class_names]
         self.indexers = np.cumsum([len(v) for v in self.rotations_data])
 
     def __getitem__(self, index):
@@ -102,25 +104,21 @@ class SymsolDataset(torch.utils.data.Dataset):
         return (3, 224, 224)
 
 
-
-
-
-
 class SPEEDPLUSDataset(torch.utils.data.Dataset):
     def __init__(self,
                  root: str,
                  split: str = 'lightbox',
                  transforms=None,
-                 max_samples: int = None,
-    ):
+                 max_samples: int = 5,
+                 ):
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
         self.transforms = transforms
 
-        #Make input 224x224 to match the I2S 
+        # Make input 224x224 to match the I2S
         self.input_size = [224, 224]   # (W, H)
 
-        self.imagefolder = 'images_768x512_RGB'  
+        self.imagefolder = 'images_768x512_RGB'
 
         csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
         print(f"Loading SPEED+ CSV from: {csv_path}")
@@ -139,16 +137,17 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         row = self.csv.iloc[index]
         filename = row[0]
         rot_q = np.array(row[1:5], dtype=np.float32)
-        t     = np.array(row[5:8], dtype=np.float32)
+        t = np.array(row[5:8], dtype=np.float32)
 
         R = self.quat2dcm(rot_q)
 
-        img_path = os.path.join(self.root, self.split, self.imagefolder, filename)
+        img_path = os.path.join(self.root, self.split,
+                                self.imagefolder, filename)
         img_bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)
         if img_bgr is None:
             raise FileNotFoundError(f"Image not found: {img_path}")
 
-        #Resize to 224x224 (W,H) so ResNet output is 7x7
+        # Resize to 224x224 (W,H) so ResNet output is 7x7
         img_bgr = cv2.resize(img_bgr, tuple(self.input_size))
 
         img = torch.from_numpy(img_bgr).to(torch.float32) / 255.0   # H x W x 3
@@ -166,7 +165,6 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
 
         return sample
 
-
     def __len__(self):
         return len(self.csv)
 
@@ -174,13 +172,14 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         row = self.csv.iloc[index]
         filename = row[0]
         rot_q = np.array(row[1:5], dtype=np.float32)   # [qw, qx, qy, qz]
-        t     = np.array(row[5:8], dtype=np.float32)   # (3,)
+        t = np.array(row[5:8], dtype=np.float32)   # (3,)
 
         # rotation matrix from quaternion
         R = self.quat2dcm(rot_q)                       # (3, 3)
 
         # load preprocessed image
-        img_path = os.path.join(self.root, self.split, self.imagefolder, filename)
+        img_path = os.path.join(self.root, self.split,
+                                self.imagefolder, filename)
         img_bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)  # H x W x 3
 
         if img_bgr is None:
@@ -228,4 +227,3 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         dcm[2, 1] = 2 * q2 * q3 - 2 * q0 * q1
 
         return dcm
-
