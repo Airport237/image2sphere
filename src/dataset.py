@@ -118,7 +118,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         # Make input 224x224 to match the I2S
         self.input_size = [224, 224]   # (W, H)
 
-        self.imagefolder = 'images_768x512_RGB'
+        self.imagefolder = 'images_224x224_RGB'
 
         csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
         print(f"Loading SPEED+ CSV from: {csv_path}")
