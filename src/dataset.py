@@ -110,6 +110,8 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
                  split: str = 'lightbox',
                  transforms=None,
                  max_samples: int = 100,
+                 train_ratio: float = 0.8,
+                 train: bool = True,
                  ):
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
@@ -121,6 +123,13 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.imagefolder = 'images_224x224_RGB'
 
         csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
+        N = len(self.csv)
+        split_idx = int(train_ratio * N)
+
+        if self.train:
+            self.csv = self.csv.iloc[:split_idx].reset_index(drop=True)
+        else:
+            self.csv = self.csv.iloc[split_idx:].reset_index(drop=True)
         print(f"Loading SPEED+ CSV from: {csv_path}")
         self.csv = pd.read_csv(csv_path, header=None)
 
