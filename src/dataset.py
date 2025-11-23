@@ -128,7 +128,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
             self.csv = self.csv.iloc[:max_samples].reset_index(drop=True)
 
         self.num_classes = 1
-        self.class_names = ('tango',)
+        self.class_names = (split,)
 
     def __len__(self):
         return len(self.csv)
