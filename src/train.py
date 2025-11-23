@@ -110,8 +110,9 @@ def evaluate_error(args, model, test_loader):
         pred_rotmat = model.predict(batch['img'], batch['cls']).cpu()
         gt_rotmat = batch['rot'].cpu()
         err = rotation_error(pred_rotmat, gt_rotmat)
+
         errors.append(err.numpy())
-        clss.append(batch['cls'].squeeze().cpu().numpy())
+        clss.append(batch['cls'].cpu().numpy().reshape(-1)) 
 
     errors = np.concatenate(errors)
     clss = np.concatenate(clss)
@@ -122,6 +123,7 @@ def evaluate_error(args, model, test_loader):
         per_class_err[args.class_names[i]] = errors[mask]
 
     np.save(os.path.join(args.fdir, 'eval.npy'), per_class_err)
+
 
 
 def create_model(args):
