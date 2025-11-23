@@ -123,6 +123,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.imagefolder = 'images_224x224_RGB'
 
         csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
+        self.csv = pd.read_csv(csv_path, header=None)
         N = len(self.csv)
         split_idx = int(train_ratio * N)
 
