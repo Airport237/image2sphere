@@ -109,7 +109,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
                  root: str,
                  split: str = 'lightbox',
                  transforms=None,
-                 max_samples: int = 5,
+                 max_samples: int = 100,
                  ):
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
