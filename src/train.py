@@ -350,16 +350,11 @@ def debug_predictions(args, model, loader, n_samples=5):
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(args.device) for k, v in batch.items()}
-
-            # 🔹 Use the same path as evaluate_error (this we know works)
             rot_pred = model.predict(batch['img'], batch['cls'])  # (B, 3, 3)
             rot_gt = batch['rot']                               # (B, 3, 3)
 
-            # translation, if available
             trans_gt = batch.get('trans', None)
             trans_pred = None
-
-            # try to get translation via forward, but don't break if not supported
             try:
                 _, trans_pred = model.forward(
                     batch['img'], batch['cls'], return_translation=True
