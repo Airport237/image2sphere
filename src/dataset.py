@@ -107,31 +107,65 @@ class SymsolDataset(torch.utils.data.Dataset):
 
 
 class SPEEDPLUSDataset(torch.utils.data.Dataset):
-    def __init__(
-        self,
-        root: str,
-        split: str = "lightbox",   # 'lightbox' or 'sunlamp'
-        transforms=None,
+    def __init__(self,
+                 root: str,
+                 split: str = 'lightbox',
+                 transforms=None,
+                 max_samples: int = None,
     ):
-        self.root = root            
-        
-        self.split = split          
+        self.root = root          # e.g. /content/speedplus_data
+        self.split = split        # 'lightbox'
         self.transforms = transforms
 
-        self.imagefolder = "images_768x512_RGB"
-        self.input_size = [768, 512]   # (W, H) for resizing if needed
+        #Make input 224x224 to match the I2S 
+        self.input_size = [224, 224]   # (W, H)
 
-        # ---- Load CSV with filenames + labels ----
-        csv_path = os.path.join(self.root, self.split, "labels", "test.csv")
+        self.imagefolder = 'images_768x512_RGB'  
+
+        csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
         print(f"Loading SPEED+ CSV from: {csv_path}")
         self.csv = pd.read_csv(csv_path, header=None)
 
-        # DEBUG:
-        self.csv = self.csv.iloc[:32].reset_index(drop=True)
+        if max_samples is not None and max_samples > 0:
+            self.csv = self.csv.iloc[:max_samples].reset_index(drop=True)
 
-        # make it look like other datasets
         self.num_classes = 1
-        self.class_names = ("tango",)
+        self.class_names = ('tango',)
+
+    def __len__(self):
+        return len(self.csv)
+
+    def __getitem__(self, index):
+        row = self.csv.iloc[index]
+        filename = row[0]
+        rot_q = np.array(row[1:5], dtype=np.float32)
+        t     = np.array(row[5:8], dtype=np.float32)
+
+        R = self.quat2dcm(rot_q)
+
+        img_path = os.path.join(self.root, self.split, self.imagefolder, filename)
+        img_bgr = cv2.imread(img_path, cv2.IMREAD_COLOR)
+        if img_bgr is None:
+            raise FileNotFoundError(f"Image not found: {img_path}")
+
+        # 🔹 Resize to 224x224 (W,H) so ResNet output is 7x7
+        img_bgr = cv2.resize(img_bgr, tuple(self.input_size))
+
+        img = torch.from_numpy(img_bgr).to(torch.float32) / 255.0   # H x W x 3
+        img = img.permute(2, 0, 1)                                 # 3 x H x W
+
+        sample = dict(
+            img=img,
+            cls=torch.zeros(1, dtype=torch.long),  # single class
+            rot=torch.from_numpy(R),
+            trans=torch.from_numpy(t),
+        )
+
+        if self.transforms is not None:
+            sample = self.transforms(sample)
+
+        return sample
+
 
     def __len__(self):
         return len(self.csv)
