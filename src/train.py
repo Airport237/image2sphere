@@ -352,8 +352,10 @@ def debug_predictions(args, model, loader, n_samples=5):
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(args.device) for k, v in batch.items()}
-            rot_pred = model.predict(batch['img'], batch['cls'])  # (B, 3, 3)
-            rot_gt = batch['rot']                               # (B, 3, 3)
+            rot_pred = model.predict(batch['img'], batch['cls'])   # (B, 3, 3)
+            rot_gt = batch['rot']                                # (B, 3, 3)
+            rot_pred = rot_pred.to(args.device)
+            rot_gt = rot_gt.to(args.device)
 
             # translation, if available
             trans_gt = batch.get('trans', None)
@@ -363,11 +365,13 @@ def debug_predictions(args, model, loader, n_samples=5):
                     batch['img'], batch['cls'], return_translation=True
                 )
             except TypeError:
+                # forward doesn't support return_translation
                 pass
 
             # rotation error per sample (same as evaluate_error logic)
-            rot_err = rotation_error(rot_pred, rot_gt)       # radians
-            rot_err_deg = torch.rad2deg(rot_err)             # (B,)
+            # radians, on args.device
+            rot_err = rotation_error(rot_pred, rot_gt)
+            rot_err_deg = torch.rad2deg(rot_err)           # (B,)
 
             bsz = rot_pred.size(0)
             for i in range(bsz):
@@ -378,8 +382,10 @@ def debug_predictions(args, model, loader, n_samples=5):
                 print(f"  rot_err = {rot_err_deg[i].item():.1f}°")
 
                 if trans_gt is not None and trans_pred is not None:
-                    print(f"  GT trans:   {trans_gt[i].cpu().numpy()}")
-                    print(f"  Pred trans: {trans_pred[i].cpu().numpy()}")
+                    print(
+                        f"  GT trans:   {trans_gt[i].detach().cpu().numpy()}")
+                    print(
+                        f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
 
                 printed += 1
 
