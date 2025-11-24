@@ -9,7 +9,7 @@ import tqdm
 import numpy as np
 import torch #added for sam2
 
-datadir = '/home/galin.j/speedplus/speedplusv2/test'
+datadir = '/home/galin.j/speedplus/speedplusv2/lightbox'
 # Read labels from JSON file
 jsonfile = '/home/galin.j/speedplus/speedplusv2/lightbox/test.json'
 print(f'Reading JSON file from {jsonfile}...')
