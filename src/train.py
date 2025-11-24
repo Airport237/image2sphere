@@ -1,4 +1,4 @@
-from speedplus_utils import kelvins_pose_score
+from src.speedplus_utils import kelvins_pose_score
 from src.predictor import I2S
 from src.so3_utils import rotation_error, nearest_rotmat
 from src.pascal_dataset import Pascal3D
