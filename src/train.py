@@ -207,6 +207,7 @@ def main(args):
                                 map_location=args.device)
         if checkpoint.get('done', False):
             print("Found completed checkpoint; exiting.")
+            evaluate_speedplus_kelvins(args, model, test_loader)
             return
 
         starting_epoch = checkpoint['epoch'] + 1
