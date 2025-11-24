@@ -333,6 +333,7 @@ def main(args):
     print("\n=== Debugging predictions on test set ===")
     debug_predictions(args, model, test_loader, n_samples=3, visualize=True)
 
+
     if args.dataset_name.find('symsol') > -1:
         evaluate_ll(args, model, test_loader)
     else:
@@ -356,10 +357,10 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
 
             # rotation prediction (same as evaluate_error)
             rot_pred = model.predict(batch['img'], batch['cls'])   # (B, 3, 3)
-            rot_gt = batch['rot']                                # (B, 3, 3)
+            rot_gt   = batch['rot']                                # (B, 3, 3)
 
             rot_pred = rot_pred.to(args.device)
-            rot_gt = rot_gt.to(args.device)
+            rot_gt   = rot_gt.to(args.device)
 
             # translation
             trans_gt = batch.get('trans', None)
@@ -384,20 +385,19 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
                 print(f"  rot_err = {rot_err_deg[i].item():.1f}°")
 
                 if trans_gt is not None and trans_pred is not None:
-                    print(
-                        f"  GT trans:   {trans_gt[i].detach().cpu().numpy()}")
-                    print(
-                        f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
+                    print(f"  GT trans:   {trans_gt[i].detach().cpu().numpy()}")
+                    print(f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
 
                     if visualize:
                         save_path = f"debug_vis/sample_{printed+1}.png"
 
-                        visualize_prediction_on_image(
-                            img_tensor=batch['img'][i],
-                            trans_pred=trans_pred[i],
-                            save_path=save_path,
-                            title=f"Prediction {printed+1}"
-                        )
+                        visualize_prediction(
+                        img_tensor=batch['img'][i],
+                        trans_pred=trans_pred[i],
+                        trans_gt=trans_gt[i],
+                        save_path=save_path,
+                        title=f"Sample {printed+1}"
+                    )
 
                         print(f"Saved visualization → {save_path}")
 
@@ -406,48 +406,68 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
         if printed == 0:
             print("No samples found in loader for debug_predictions.")
 
-
-def visualize_prediction_on_image(img_tensor, trans_pred, save_path, title=None):
+def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None):
     """
-    img_tensor  : torch.Tensor (3, H, W) in [0,1]
-    trans_pred  : torch.Tensor (3,)   xyz in meters
-    save_path   : where to save PNG
+    img_tensor: (3, H, W) torch tensor in [0,1]
+    trans_pred: (3,) predicted xyz (meters)
+    trans_gt:   (3,) ground-truth xyz (meters)
+    save_path:  file path to save output PNG
     """
 
+    # Convert to numpy image
     img = img_tensor.detach().cpu().permute(1, 2, 0).numpy()
     H, W, _ = img.shape
-    t = trans_pred.detach().cpu().numpy()
-    tx, ty, tz = t
 
-    # Convert xyz → pixel (dummy mapping)
-    u = int((np.tanh(tx) + 1) / 2 * W)
-    v = int((np.tanh(ty) + 1) / 2 * H)
+    # Convert predicted vector
+    t_pred = trans_pred.detach().cpu().numpy()
+    px, py, pz = t_pred
 
-    folder = os.path.dirname(save_path)
-    if folder != "":
-        os.makedirs(folder, exist_ok=True)
+    # Convert GT vector
+    t_gt = trans_gt.detach().cpu().numpy()
+    gx, gy, gz = t_gt
 
-    # Plot
+    # === Fake projection (simple tanh normalization) ===
+    # Pred
+    u_pred = int((np.tanh(px) + 1) / 2 * W)
+    v_pred = int((np.tanh(py) + 1) / 2 * H)
+
+    # GT
+    u_gt = int((np.tanh(gx) + 1) / 2 * W)
+    v_gt = int((np.tanh(gy) + 1) / 2 * H)
+
+    # Ensure output folder exists
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+    # === Plot image with points ===
     plt.figure(figsize=(4, 4))
     plt.imshow(img)
-    plt.scatter([u], [v], c='red', s=60, label="Predicted Position")
+    plt.scatter([u_pred], [v_pred], c='red', s=60, label="Predicted")
+    plt.scatter([u_gt], [v_gt], c='cyan', s=60, label="Ground Truth")
     plt.axis("off")
 
-    legend_text = f"x = {tx:.3f} m\ny = {ty:.3f} m\nz = {tz:.3f} m"
+    # === Legend text ===
+    legend_text = (
+        f"Predicted:\n"
+        f"x={px:.3f} m, y={py:.3f} m, z={pz:.3f} m\n\n"
+        f"Ground Truth:\n"
+        f"x={gx:.3f} m, y={gy:.3f} m, z={gz:.3f} m"
+    )
 
+    # Put legend box in upper-left
     plt.text(
         5, 5, legend_text,
-        fontsize=10,
+        fontsize=9,
         color="white",
-        bbox=dict(facecolor="black", alpha=0.6, edgecolor="none")
+        bbox=dict(facecolor="black", alpha=0.65, edgecolor="none"),
+        verticalalignment="top"
     )
 
     if title:
         plt.title(title)
 
+    # Save file
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
