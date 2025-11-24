@@ -1,3 +1,4 @@
+from speedplus_utils import kelvins_pose_score
 from src.predictor import I2S
 from src.so3_utils import rotation_error, nearest_rotmat
 from src.pascal_dataset import Pascal3D
@@ -338,12 +339,67 @@ def main(args):
         evaluate_ll(args, model, test_loader)
     else:
         evaluate_error(args, model, test_loader)
+    
+    if args.dataset_name == 'speed+':
+        evaluate_speedplus_kelvins(args, model, test_loader)
 
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'done': True,
     }, os.path.join(args.fdir, "checkpoint.pt"))
+
+def evaluate_speedplus_kelvins(args, model, loader):
+    """
+    Compute Kelvins/SPEED+ pose score:
+      - orientation score (deg with tolerance)
+      - position score (normalized with tolerance)
+      - combined pose score
+    """
+    model.eval()
+
+    all_pose_scores = []
+    all_orient_scores = []
+    all_pos_scores = []
+
+    with torch.no_grad():
+        for batch in loader:
+            batch = {k: v.to(args.device) for k, v in batch.items()}
+            img  = batch['img']
+            cls  = batch['cls']
+            R_gt = batch['rot']      # (B, 3, 3)
+            t_gt = batch['trans']    # (B, 3)
+
+            # rotation prediction
+            R_pred = model.predict(img, cls)  # (B, 3, 3)
+
+            # translation prediction
+            _, t_pred = model.forward(img, cls, return_translation=True)  # (B, 3)
+
+            pose_score, s_orient, s_pos = kelvins_pose_score(
+                R_pred, R_gt, t_pred, t_gt
+            )
+
+            all_pose_scores.append(pose_score.cpu())
+            all_orient_scores.append(s_orient.cpu())
+            all_pos_scores.append(s_pos.cpu())
+
+    all_pose_scores   = torch.cat(all_pose_scores).numpy()
+    all_orient_scores = torch.cat(all_orient_scores).numpy()
+    all_pos_scores    = torch.cat(all_pos_scores).numpy()
+
+    print("\n=== Kelvins / SPEED+ scoring (lightbox) ===")
+    print(f"Mean orientation score (deg):   {all_orient_scores.mean():.4f}")
+    print(f"Mean position score (norm):     {all_pos_scores.mean():.6f}")
+    print(f"Mean pose score (leaderboard):  {all_pose_scores.mean():.4f}")
+    print("===========================================\n")
+
+    return {
+        "pose_score_mean": float(all_pose_scores.mean()),
+        "orient_score_mean": float(all_orient_scores.mean()),
+        "pos_score_mean": float(all_pos_scores.mean()),
+    }
+
 
 
 def debug_predictions(args, model, loader, n_samples=5, visualize=True):
