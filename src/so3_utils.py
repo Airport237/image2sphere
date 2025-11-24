@@ -15,12 +15,16 @@ def compute_trace(rotA, rotB):
 
 
 def rotation_error(rotA, rotB):
-    '''
-    rotA, rotB are tensors of shape (*,3,3)
-    returns error in radians, tensor of shape (*)
-    '''
+    """
+    rotA, rotB: tensors of shape (..., 3, 3)
+    returns: angular error in radians, shape (...)
+    """
+    if rotA.device != rotB.device:
+        rotB = rotB.to(rotA.device)
+
     trace = compute_trace(rotA, rotB)
-    return torch.arccos(torch.clamp( (trace - 1)/2, -1, 1))
+    cos_theta = torch.clamp((trace - 1.0) / 2.0, -1.0 + 1e-7, 1.0 - 1e-7)
+    return torch.arccos(cos_theta)
 
 
 def nearest_rotmat(src, target):
