@@ -125,7 +125,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         if self.train:
             csv_path = os.path.join(self.root, self.split, 'labels', 'train.csv')
         else:
-             csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
+             csv_path = os.path.join(self.root, self.split, 'labels', 'validation.csv')
            
         self.csv = pd.read_csv(csv_path, header=None)
 
