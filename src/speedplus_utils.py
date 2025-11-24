@@ -1,7 +1,6 @@
 import torch
 import numpy as np
 
-# ---- 1. Matrix -> quaternion (w, x, y, z) ----
 def rotmat_to_quat(R: torch.Tensor) -> torch.Tensor:
     """
     R: (B, 3, 3)
@@ -9,8 +8,6 @@ def rotmat_to_quat(R: torch.Tensor) -> torch.Tensor:
     """
     B = R.shape[0]
     q = torch.empty((B, 4), device=R.device, dtype=R.dtype)
-
-    # numerically stable variant
     trace = R[:, 0, 0] + R[:, 1, 1] + R[:, 2, 2]
 
     # w branch
@@ -49,7 +46,6 @@ def rotmat_to_quat(R: torch.Tensor) -> torch.Tensor:
     q = q / q.norm(dim=1, keepdim=True)
     return q
 
-# ---- 2. Kelvins orientation score (deg) ----
 def kelvins_orientation_score(R_est, R_gt, tol_deg=0.169):
     """
     R_est, R_gt: (B, 3, 3)
@@ -70,7 +66,6 @@ def kelvins_orientation_score(R_est, R_gt, tol_deg=0.169):
     score[err_deg < tol_deg] = 0.0
     return score  # (B,)
 
-# ---- 3. Kelvins position score (normalized) ----
 def kelvins_position_score(t_est, t_gt, tol=0.002173):
     """
     t_est, t_gt: (B, 3) in meters
@@ -84,7 +79,7 @@ def kelvins_position_score(t_est, t_gt, tol=0.002173):
     score[err < tol] = 0.0
     return score  # (B,)
 
-# ---- 4. Combined pose score ----
+
 def kelvins_pose_score(R_est, R_gt, t_est, t_gt):
     s_orient = kelvins_orientation_score(R_est, R_gt)   # deg
     s_pos    = kelvins_position_score(t_est, t_gt)      # normalized
