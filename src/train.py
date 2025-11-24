@@ -414,38 +414,30 @@ def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None
     save_path:  file path to save output PNG
     """
 
-    # Convert to numpy image
     img = img_tensor.detach().cpu().permute(1, 2, 0).numpy()
     H, W, _ = img.shape
-
-    # Convert predicted vector
     t_pred = trans_pred.detach().cpu().numpy()
     px, py, pz = t_pred
 
-    # Convert GT vector
+
     t_gt = trans_gt.detach().cpu().numpy()
     gx, gy, gz = t_gt
 
     # === Fake projection (simple tanh normalization) ===
-    # Pred
     u_pred = int((np.tanh(px) + 1) / 2 * W)
     v_pred = int((np.tanh(py) + 1) / 2 * H)
 
-    # GT
     u_gt = int((np.tanh(gx) + 1) / 2 * W)
     v_gt = int((np.tanh(gy) + 1) / 2 * H)
 
-    # Ensure output folder exists
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    # === Plot image with points ===
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.figure(figsize=(4, 4))
     plt.imshow(img)
     plt.scatter([u_pred], [v_pred], c='red', s=60, label="Predicted")
     plt.scatter([u_gt], [v_gt], c='cyan', s=60, label="Ground Truth")
     plt.axis("off")
 
-    # === Legend text ===
     legend_text = (
         f"Predicted:\n"
         f"x={px:.3f} m, y={py:.3f} m, z={pz:.3f} m\n\n"
@@ -453,7 +445,6 @@ def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None
         f"x={gx:.3f} m, y={gy:.3f} m, z={gz:.3f} m"
     )
 
-    # Put legend box in upper-left
     plt.text(
         5, 5, legend_text,
         fontsize=9,
