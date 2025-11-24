@@ -11,6 +11,7 @@ import logging
 import numpy as np
 import torch
 import warnings
+import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore', category=UserWarning)
 
 
@@ -330,7 +331,7 @@ def main(args):
 
     # quick sanity check on a few predictions
     print("\n=== Debugging predictions on test set ===")
-    debug_predictions(args, model, test_loader)
+    debug_predictions(args, model, test_loader, n_samples=3, visualize=True)
 
     if args.dataset_name.find('symsol') > -1:
         evaluate_ll(args, model, test_loader)
@@ -344,20 +345,23 @@ def main(args):
     }, os.path.join(args.fdir, "checkpoint.pt"))
 
 
-def debug_predictions(args, model, loader, n_samples=5):
-    """Print a few GT vs predicted rotations/translations to see if things are sane."""
+def debug_predictions(args, model, loader, n_samples=5, visualize=True):
+    """Print a few GT vs predicted rotations/translations and optionally visualize."""
     model.eval()
     printed = 0
 
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(args.device) for k, v in batch.items()}
+
+            # rotation prediction (same as evaluate_error)
             rot_pred = model.predict(batch['img'], batch['cls'])   # (B, 3, 3)
             rot_gt = batch['rot']                                # (B, 3, 3)
+
             rot_pred = rot_pred.to(args.device)
             rot_gt = rot_gt.to(args.device)
 
-            # translation, if available
+            # translation
             trans_gt = batch.get('trans', None)
             trans_pred = None
             try:
@@ -365,13 +369,11 @@ def debug_predictions(args, model, loader, n_samples=5):
                     batch['img'], batch['cls'], return_translation=True
                 )
             except TypeError:
-                # forward doesn't support return_translation
                 pass
 
-            # rotation error per sample (same as evaluate_error logic)
-            # radians, on args.device
-            rot_err = rotation_error(rot_pred, rot_gt)
-            rot_err_deg = torch.rad2deg(rot_err)           # (B,)
+            # rotation error
+            rot_err = rotation_error(rot_pred, rot_gt)     # radians
+            rot_err_deg = torch.rad2deg(rot_err)
 
             bsz = rot_pred.size(0)
             for i in range(bsz):
@@ -387,10 +389,64 @@ def debug_predictions(args, model, loader, n_samples=5):
                     print(
                         f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
 
+                    if visualize:
+                        save_path = f"debug_vis/sample_{printed+1}.png"
+
+                        visualize_prediction_on_image(
+                            img_tensor=batch['img'][i],
+                            trans_pred=trans_pred[i],
+                            save_path=save_path,
+                            title=f"Prediction {printed+1}"
+                        )
+
+                        print(f"Saved visualization → {save_path}")
+
                 printed += 1
 
         if printed == 0:
             print("No samples found in loader for debug_predictions.")
+
+
+def visualize_prediction_on_image(img_tensor, trans_pred, save_path, title=None):
+    """
+    img_tensor  : torch.Tensor (3, H, W) in [0,1]
+    trans_pred  : torch.Tensor (3,)   xyz in meters
+    save_path   : where to save PNG
+    """
+
+    img = img_tensor.detach().cpu().permute(1, 2, 0).numpy()
+    H, W, _ = img.shape
+    t = trans_pred.detach().cpu().numpy()
+    tx, ty, tz = t
+
+    # Convert xyz → pixel (dummy mapping)
+    u = int((np.tanh(tx) + 1) / 2 * W)
+    v = int((np.tanh(ty) + 1) / 2 * H)
+
+    folder = os.path.dirname(save_path)
+    if folder != "":
+        os.makedirs(folder, exist_ok=True)
+
+    # Plot
+    plt.figure(figsize=(4, 4))
+    plt.imshow(img)
+    plt.scatter([u], [v], c='red', s=60, label="Predicted Position")
+    plt.axis("off")
+
+    legend_text = f"x = {tx:.3f} m\ny = {ty:.3f} m\nz = {tz:.3f} m"
+
+    plt.text(
+        5, 5, legend_text,
+        fontsize=10,
+        color="white",
+        bbox=dict(facecolor="black", alpha=0.6, edgecolor="none")
+    )
+
+    if title:
+        plt.title(title)
+
+    plt.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close()
 
 
 if __name__ == "__main__":
