@@ -11,13 +11,13 @@ import torch #added for sam2
 
 datadir = '/home/galin.j/speedplus/speedplusv2/synthetic'
 # Read labels from JSON file
-jsonfile = '/home/galin.j/speedplus/speedplusv2/synthetic/validation.json'
+jsonfile = '/home/galin.j/speedplus/speedplusv2/synthetic/train.json'
 print(f'Reading JSON file from {jsonfile}...')
 with open(jsonfile, 'r') as f:
     labels = json.load(f) # list
 
 domain = ''
-split = 'validation.json'
+split = 'train.json'
 outdir = os.path.join(datadir, domain, 'labels')
 if not os.path.exists(outdir): os.makedirs(outdir)
 csvfile = os.path.join(outdir, split.replace('json', 'csv'))
