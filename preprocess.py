@@ -17,7 +17,7 @@ with open(jsonfile, 'r') as f:
     labels = json.load(f) # list
 
 domain = ''
-split = 'train.json'
+split = 'validation.json'
 outdir = os.path.join(datadir, domain, 'labels')
 if not os.path.exists(outdir): os.makedirs(outdir)
 csvfile = os.path.join(outdir, split.replace('json', 'csv'))
