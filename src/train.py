@@ -509,9 +509,8 @@ if __name__ == "__main__":
                                  'symsolI-50000',  # 5 classes of symsolI with 50k training views each
                                  'symsolII-50000',  # symsol sphX with 50k training views each
                                  'symsolIII-50000',  # symsol cylO with 50k training views each
-                                 'symsolIIII-50000',  # symsol tetX with 50k training views each
-                                 # Stanford speed+ dataset (a small sample)
-                                 'speed+',
+                                 'symsolIIII-50000',  # symsol tetX with 50k training views each# Stanford speed+ dataset (a small sample)
+                                 'speed+', # Stanford speed+ dataset (a small sample)
                                  ]
                         )
 
