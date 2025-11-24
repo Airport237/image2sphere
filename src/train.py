@@ -48,7 +48,7 @@ def create_dataloaders(args):
         print("aftter train")
         test_set = SPEEDPLUSDataset(
             root=args.dataset_path,
-            split='lightbox',
+            split='synthetic',
             train=False
         )
     else:
