@@ -370,11 +370,16 @@ def evaluate_speedplus_kelvins(args, model, loader):
             R_gt = batch['rot']      # (B, 3, 3)
             t_gt = batch['trans']    # (B, 3)
 
-            # rotation prediction
-            R_pred = model.predict(img, cls)  # (B, 3, 3)
+            # rotation prediction (model.predict returns CPU tensors!)
+            R_pred = model.predict(img, cls).to(img.device)  # Move to GPU if needed
 
             # translation prediction
-            _, t_pred = model.forward(img, cls, return_translation=True)  # (B, 3)
+            _, t_pred = model.forward(img, cls, return_translation=True)
+
+            # ensure both are on same device as GT
+            R_pred = R_pred.to(R_gt.device)
+            t_pred = t_pred.to(t_gt.device)
+
 
             pose_score, s_orient, s_pos = kelvins_pose_score(
                 R_pred, R_gt, t_pred, t_gt
