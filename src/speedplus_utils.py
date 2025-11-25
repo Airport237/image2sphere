@@ -65,7 +65,7 @@ def kelvins_orientation_score(R_est, R_gt, tol_deg=0.169):
     # score = err_deg.clone()
     # score[err_deg < tol_deg] = 0.0
     # return score  # (B,)
-
+    print(R_est.shape, R_gt.shape, R_est.ndim)
     assert R_est.shape == R_gt.shape and R_est.ndim == 2
     assert np.abs(np.linalg.det(R_est) - 1) < 1e-6, \
         f'Determinant of R_pr is {np.linalg.det(R_est)}'
