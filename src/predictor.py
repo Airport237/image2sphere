@@ -39,6 +39,26 @@ class BaseSO3Predictor(nn.Module):
         torch.save(self.state_dict(), path)
 
 
+class FullyConvTranslationHead(nn.Module):
+    def __init__(self, in_channels, hidden=128):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(in_channels, hidden, 3, padding=1),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(hidden, hidden, 3, padding=1),
+            nn.ReLU(inplace=True),
+
+            nn.AdaptiveAvgPool2d(1),
+
+            nn.Conv2d(hidden, 3, kernel_size=1),  # (B, 3, 1, 1)
+            nn.Flatten(),  # -> (B, 3)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
 class I2S(BaseSO3Predictor):
     def __init__(self,
                  num_classes: int = 1,
@@ -72,13 +92,7 @@ class I2S(BaseSO3Predictor):
         # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
-                nn.Flatten(),              # (B, C, 1, 1) -> (B, C)
-                nn.Linear(c, trans_hidden),
-                nn.ReLU(inplace=True),
-                nn.Linear(trans_hidden, 3),   # (x, y, z)
-            )
+            self.translation_head = FullyConvTranslationHead(c)
         else:
             self.translation_head = None
 
@@ -210,8 +224,6 @@ class I2S(BaseSO3Predictor):
 
         return loss, stats
 
-
-
     def query_train_grid(self, x, gt_rot=None):
         '''x is signal over fourier basis'''
         if self.train_grid_mode == 'random':
@@ -273,5 +285,3 @@ class I2S(BaseSO3Predictor):
         probs = torch.matmul(harmonics, self.eval_wigners).squeeze(1)
 
         return nn.Softmax(dim=1)(probs)
-
-    
