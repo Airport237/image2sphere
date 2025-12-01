@@ -139,7 +139,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         if self.train:
             self.csv = self.csv.iloc[:split_idx].reset_index(drop=True)
         else:
-            self.csv = self.csv.iloc[split_idx:].reset_index(drop=True)
+            self.csv = self.csv.iloc[:].reset_index(drop=True)
         print(f"Loading SPEED+ CSV from: {csv_path}")
 
         self.num_classes = 1
