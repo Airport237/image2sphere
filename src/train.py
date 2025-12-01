@@ -41,18 +41,22 @@ def create_dataloaders(args):
                                  set_number=args.dataset_name.count('I'),
                                  num_views=5000)
     elif args.dataset_name == 'speed+':
+        print("in speedplus")
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
-            split='lightbox',   # domain name
+            split=args.speedplus_split,   # domain name
             train=True
         )
+        print("aftter train")
         test_set = SPEEDPLUSDataset(
             root=args.dataset_path,
-            split='lightbox',
+            split=args.speedplus_test,
             train=False
         )
     else:
         raise TypeError('Invalid dataset name')
+
+    print(f'{len(train_set)} train imgs; {len(test_set)} test imgs')
 
     args.img_shape = train_set.img_shape
     args.num_classes = train_set.num_classes
@@ -203,7 +207,6 @@ def main(args):
                                 map_location=args.device)
         if checkpoint.get('done', False):
             print("Found completed checkpoint; exiting.")
-            assert args.batch_size == 1, "For evaluation, please set batch_size=1"
             evaluate_speedplus_kelvins(args, model, test_loader)
             return
 
@@ -388,7 +391,6 @@ def evaluate_speedplus_kelvins(args, model, loader):
             R_pred = R_pred.squeeze()
             t_pred = t_pred.squeeze()
 
-            # make sure on ly batch size 1
             pose_score, s_orient, s_pos = kelvins_pose_score(
                 t_pred, R_pred, t_gt, R_gt
             )
@@ -583,6 +585,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--num_workers', type=int, default=4,
                         help='workers used by dataloader')
+
+    parser.add_argument('--speedplus_split', type=str, default="synthetic")
+    parser.add_argument('--speedplus_test', type=str, default="lightbox")
     args = parser.parse_args()
 
     start_time = datetime.now()
