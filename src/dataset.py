@@ -113,7 +113,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
                  train_ratio: float = 0.8,
                  train: bool = True,
                  ):
-        
+
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
         self.transforms = transforms
@@ -123,8 +123,9 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.input_size = [224, 224]   # (W, H)
 
         self.imagefolder = 'images_768x512_RGB'
-
-        csv_path = os.path.join(self.root, self.split, 'labels', 'test.csv')
+        dataset = "train" if train else "test"
+        csv_path = os.path.join(self.root, self.split,
+                                'labels', f"{dataset}.csv")
         self.csv = pd.read_csv(csv_path, header=None)
 
         if max_samples is not None and max_samples > 0:
