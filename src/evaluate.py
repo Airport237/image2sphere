@@ -3,7 +3,7 @@ from src.predictor import I2S
 from src.so3_utils import rotation_error, nearest_rotmat
 from src.pascal_dataset import Pascal3D
 from src.dataset import ModelNet10Dataset, SPEEDPLUSDataset, SymsolDataset
-from train import evaluate_speedplus_kelvins
+from src.train import evaluate_speedplus_kelvins
 import re
 import argparse
 import os
