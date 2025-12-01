@@ -9,6 +9,7 @@ from e3nn import o3
 
 from e3nn.o3 import Irreps
 from e3nn.nn import Activation
+import torch.nn.functional as F
 
 from src import so3_utils
 from src.models import (
@@ -59,6 +60,77 @@ class FullyConvTranslationHead(nn.Module):
         return self.net(x)
 
 
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # optional 1x1 conv if channels or stride change
+        if stride != 1 or in_channels != out_channels:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.downsample = None
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = F.relu(out, inplace=True)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = F.relu(out, inplace=True)
+        return out
+
+
+class ResNetTranslationHead(nn.Module):
+    def __init__(self, in_channels, hidden_channels=256, num_blocks=2):
+        super().__init__()
+
+        # first conv to project features
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_channels, kernel_size=3,
+                      stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_channels),
+            nn.ReLU(inplace=True),
+        )
+
+        # stack a few residual blocks
+        blocks = []
+        for _ in range(num_blocks):
+            blocks.append(ResidualBlock(hidden_channels, hidden_channels))
+        self.res_layers = nn.Sequential(*blocks)
+
+        # global pool + linear to 3D translation
+        self.pool = nn.AdaptiveAvgPool2d(1)  # (B, C, 1, 1)
+        self.fc = nn.Linear(hidden_channels, 3)
+
+    def forward(self, x):
+        x = self.stem(x)          # (B, C, H, W)
+        x = self.res_layers(x)    # residual refinement
+        x = self.pool(x)          # (B, C, 1, 1)
+        x = torch.flatten(x, 1)   # (B, C)
+        x = self.fc(x)            # (B, 3)
+        return x
+
+
 class I2S(BaseSO3Predictor):
     def __init__(self,
                  num_classes: int = 1,
@@ -92,7 +164,9 @@ class I2S(BaseSO3Predictor):
         # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = FullyConvTranslationHead(c)
+            self.trans_head = ResNetTranslationHead(
+                in_channels=c, hidden_channels=256, num_blocks=2)
+
         else:
             self.translation_head = None
 
