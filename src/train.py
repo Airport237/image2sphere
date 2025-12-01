@@ -335,12 +335,11 @@ def main(args):
     print("\n=== Debugging predictions on test set ===")
     debug_predictions(args, model, test_loader, n_samples=3, visualize=True)
 
-
     if args.dataset_name.find('symsol') > -1:
         evaluate_ll(args, model, test_loader)
     else:
         evaluate_error(args, model, test_loader)
-    
+
     if args.dataset_name == 'speed+':
         evaluate_speedplus_kelvins(args, model, test_loader)
         return
@@ -350,6 +349,7 @@ def main(args):
         'model_state_dict': model.state_dict(),
         'done': True,
     }, os.path.join(args.fdir, "checkpoint.pt"))
+
 
 def evaluate_speedplus_kelvins(args, model, loader):
     """
@@ -367,8 +367,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
     with torch.no_grad():
         for batch in loader:
             batch = {k: v.to(args.device) for k, v in batch.items()}
-            img  = batch['img']
-            cls  = batch['cls']
+            img = batch['img']
+            cls = batch['cls']
             R_gt = batch['rot']      # (B, 3, 3)
             t_gt = batch['trans']    # (B, 3)
 
@@ -378,7 +378,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
             # print(f"R-gt: {R_gt}")
             # print(f"t-gt: {t_gt}")
             # rotation prediction (model.predict returns CPU tensors!)
-            R_pred = model.predict(img, cls).to(img.device)  # Move to GPU if needed
+            R_pred = model.predict(img, cls).to(
+                img.device)  # Move to GPU if needed
 
             # translation prediction
             _, t_pred = model.forward(img, cls, return_translation=True)
@@ -394,9 +395,9 @@ def evaluate_speedplus_kelvins(args, model, loader):
                 t_pred, R_pred, t_gt, R_gt
             )
 
-            pose_score  = torch.as_tensor(pose_score,  device='cpu').reshape(-1)
-            s_orient    = torch.as_tensor(s_orient,    device='cpu').reshape(-1)
-            s_pos       = torch.as_tensor(s_pos,       device='cpu').reshape(-1)
+            pose_score = torch.as_tensor(pose_score,  device='cpu').reshape(-1)
+            s_orient = torch.as_tensor(s_orient,    device='cpu').reshape(-1)
+            s_pos = torch.as_tensor(s_pos,       device='cpu').reshape(-1)
 
             all_pose_scores.append(pose_score)
             all_orient_scores.append(s_orient)
@@ -405,7 +406,6 @@ def evaluate_speedplus_kelvins(args, model, loader):
     all_pose_scores = np.array(all_pose_scores)
     all_orient_scores = np.array(all_orient_scores)
     all_pos_scores = np.array(all_pos_scores)
-
 
     print("\n=== Kelvins / SPEED+ scoring (lightbox) ===")
     print(f"Mean orientation score (deg):   {all_orient_scores.mean():.4f}")
@@ -420,7 +420,6 @@ def evaluate_speedplus_kelvins(args, model, loader):
     }
 
 
-
 def debug_predictions(args, model, loader, n_samples=5, visualize=True):
     """Print a few GT vs predicted rotations/translations and optionally visualize."""
     model.eval()
@@ -432,10 +431,10 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
 
             # rotation prediction (same as evaluate_error)
             rot_pred = model.predict(batch['img'], batch['cls'])   # (B, 3, 3)
-            rot_gt   = batch['rot']                                # (B, 3, 3)
+            rot_gt = batch['rot']                                # (B, 3, 3)
 
             rot_pred = rot_pred.to(args.device)
-            rot_gt   = rot_gt.to(args.device)
+            rot_gt = rot_gt.to(args.device)
 
             # translation
             trans_gt = batch.get('trans', None)
@@ -460,19 +459,21 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
                 print(f"  rot_err = {rot_err_deg[i].item():.1f}°")
 
                 if trans_gt is not None and trans_pred is not None:
-                    print(f"  GT trans:   {trans_gt[i].detach().cpu().numpy()}")
-                    print(f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
+                    print(
+                        f"  GT trans:   {trans_gt[i].detach().cpu().numpy()}")
+                    print(
+                        f"  Pred trans: {trans_pred[i].detach().cpu().numpy()}")
 
                     if visualize:
                         save_path = f"debug_vis/sample_{printed+1}.png"
 
                         visualize_prediction(
-                        img_tensor=batch['img'][i],
-                        trans_pred=trans_pred[i],
-                        trans_gt=trans_gt[i],
-                        save_path=save_path,
-                        title=f"Sample {printed+1}"
-                    )
+                            img_tensor=batch['img'][i],
+                            trans_pred=trans_pred[i],
+                            trans_gt=trans_gt[i],
+                            save_path=save_path,
+                            title=f"Sample {printed+1}"
+                        )
 
                         print(f"Saved visualization → {save_path}")
 
@@ -480,6 +481,7 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
 
         if printed == 0:
             print("No samples found in loader for debug_predictions.")
+
 
 def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None):
     """
@@ -494,7 +496,6 @@ def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None
     t_pred = trans_pred.detach().cpu().numpy()
     px, py, pz = t_pred
 
-
     t_gt = trans_gt.detach().cpu().numpy()
     gx, gy, gz = t_gt
 
@@ -504,7 +505,6 @@ def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None
 
     u_gt = int((np.tanh(gx) + 1) / 2 * W)
     v_gt = int((np.tanh(gy) + 1) / 2 * H)
-
 
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     plt.figure(figsize=(4, 4))
@@ -534,6 +534,7 @@ def visualize_prediction(img_tensor, trans_pred, trans_gt, save_path, title=None
     # Save file
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     plt.close()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -575,8 +576,10 @@ if __name__ == "__main__":
                                  'symsolI-50000',  # 5 classes of symsolI with 50k training views each
                                  'symsolII-50000',  # symsol sphX with 50k training views each
                                  'symsolIII-50000',  # symsol cylO with 50k training views each
-                                 'symsolIIII-50000',  # symsol tetX with 50k training views each# Stanford speed+ dataset (a small sample)
-                                 'speed+', # Stanford speed+ dataset (a small sample)
+                                 # symsol tetX with 50k training views each# Stanford speed+ dataset (a small sample)
+                                 'symsolIIII-50000',
+                                 # Stanford speed+ dataset (a small sample)
+                                 'speed+',
                                  ]
                         )
 
