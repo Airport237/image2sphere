@@ -340,9 +340,9 @@ def main(args):
     else:
         evaluate_error(args, model, test_loader)
 
-    if args.dataset_name == 'speed+':
-        evaluate_speedplus_kelvins(args, model, test_loader)
-        return
+    # if args.dataset_name == 'speed+':
+    #     evaluate_speedplus_kelvins(args, model, test_loader)
+    #     return
 
     torch.save({
         'epoch': epoch,
