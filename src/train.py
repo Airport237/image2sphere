@@ -343,6 +343,7 @@ def main(args):
     
     if args.dataset_name == 'speed+':
         evaluate_speedplus_kelvins(args, model, test_loader)
+        return
 
     torch.save({
         'epoch': epoch,
@@ -371,6 +372,11 @@ def evaluate_speedplus_kelvins(args, model, loader):
             R_gt = batch['rot']      # (B, 3, 3)
             t_gt = batch['trans']    # (B, 3)
 
+            R_gt = R_gt.squeeze()
+            t_gt = t_gt.squeeze()
+
+            # print(f"R-gt: {R_gt}")
+            # print(f"t-gt: {t_gt}")
             # rotation prediction (model.predict returns CPU tensors!)
             R_pred = model.predict(img, cls).to(img.device)  # Move to GPU if needed
 
@@ -381,18 +387,25 @@ def evaluate_speedplus_kelvins(args, model, loader):
             R_pred = R_pred.to(R_gt.device)
             t_pred = t_pred.to(t_gt.device)
 
+            R_pred = R_pred.squeeze()
+            t_pred = t_pred.squeeze()
 
             pose_score, s_orient, s_pos = kelvins_pose_score(
-                R_pred, R_gt, t_pred, t_gt
+                t_pred, R_pred, t_gt, R_gt
             )
 
-            all_pose_scores.append(pose_score.cpu())
-            all_orient_scores.append(s_orient.cpu())
-            all_pos_scores.append(s_pos.cpu())
+            pose_score  = torch.as_tensor(pose_score,  device='cpu').reshape(-1)
+            s_orient    = torch.as_tensor(s_orient,    device='cpu').reshape(-1)
+            s_pos       = torch.as_tensor(s_pos,       device='cpu').reshape(-1)
 
-    all_pose_scores   = torch.cat(all_pose_scores).numpy()
-    all_orient_scores = torch.cat(all_orient_scores).numpy()
-    all_pos_scores    = torch.cat(all_pos_scores).numpy()
+            all_pose_scores.append(pose_score)
+            all_orient_scores.append(s_orient)
+            all_pos_scores.append(s_pos)
+
+    all_pose_scores = np.array(all_pose_scores)
+    all_orient_scores = np.array(all_orient_scores)
+    all_pos_scores = np.array(all_pos_scores)
+
 
     print("\n=== Kelvins / SPEED+ scoring (lightbox) ===")
     print(f"Mean orientation score (deg):   {all_orient_scores.mean():.4f}")
@@ -401,7 +414,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     print("===========================================\n")
 
     return {
-        "pose_score_mean": float(all_pose_scores.mean()),
+        "pose_score_mean": float((all_pose_scores.mean())),
         "orient_score_mean": float(all_orient_scores.mean()),
         "pos_score_mean": float(all_pos_scores.mean()),
     }
