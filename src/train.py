@@ -365,6 +365,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     all_pos_scores = []
 
     with torch.no_grad():
+        print("Entering Eval Loop")
         for indx, batch in enumerate(loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             img = batch['img']
