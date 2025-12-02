@@ -365,7 +365,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     all_pos_scores = []
 
     with torch.no_grad():
-        for batch in loader:
+        for indx, batch in enumerate(loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             img = batch['img']
             cls = batch['cls']
@@ -402,6 +402,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
             all_pose_scores.append(pose_score)
             all_orient_scores.append(s_orient)
             all_pos_scores.append(s_pos)
+            if indx % 10 == 0:
+                print(f"Evaluating image {indx}/{len(loader)}")
 
     all_pose_scores = np.array(all_pose_scores)
     all_orient_scores = np.array(all_orient_scores)
