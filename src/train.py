@@ -278,6 +278,7 @@ def main(args):
             test_trans_losses.append(stats["trans_loss"])
             test_cls.append(batch['cls'].cpu().numpy().reshape(-1))
 
+
         test_loss /= (batch_idx + 1)
         test_rot_errs = np.concatenate(test_rot_errs)
         test_rot_err_deg_median = np.degrees(np.median(test_rot_errs))
@@ -365,7 +366,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     all_pos_scores = []
 
     with torch.no_grad():
-        for batch in loader:
+        for indx, batch in enumerate(loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             img = batch['img']
             cls = batch['cls']
@@ -402,6 +403,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
             all_pose_scores.append(pose_score)
             all_orient_scores.append(s_orient)
             all_pos_scores.append(s_pos)
+            if indx % 10 == 0:
+                print(f"Evaluating image {indx}/{len(loader)}")
 
     all_pose_scores = np.array(all_pose_scores)
     all_orient_scores = np.array(all_orient_scores)
