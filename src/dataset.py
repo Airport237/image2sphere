@@ -112,17 +112,23 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
                  max_samples: int = None,
                  train_ratio: float = 0.8,
                  train: bool = True,
+                 masks_flag=False
                  ):
 
         self.root = root          # e.g. /content/speedplus_data
         self.split = split        # 'lightbox'
         self.transforms = transforms
         self.train = train
+        self.masks_flag = masks_flag  
 
-        # Make input 224x224 to match the I2S
-        self.input_size = [224, 224]   # (W, H)
+        self.input_size = [224, 224]
 
-        self.imagefolder = 'images_768x512_RGB'
+        if self.masks_flag == False:  
+            self.imagefolder = 'images_768x512_RGB'
+        else:
+            self.imagefolder = 'images_768x512_MASKING'
+
+
         dataset = "train" if train else "test"
         csv_path = os.path.join(self.root, self.split,
                                 'labels', f"{dataset}.csv")
