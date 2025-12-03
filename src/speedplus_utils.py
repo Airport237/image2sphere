@@ -131,3 +131,26 @@ def kelvins_pose_score(t_pr, ori_pr, t_gt, ori_gt, representation='quaternion',
     speed = speed_t + speed_q
 
     return speed_t, speed_q, speed
+
+
+def compute_translation_stats(loader):
+    """Compute per-dim mean/std of translation vectors from the training loader."""
+    all_t = []
+
+    for batch in loader:
+        if 'trans' not in batch:
+            continue
+        t = batch['trans']  # (B, 3)
+        all_t.append(t.view(-1, 3).cpu())
+
+    if not all_t:
+        mean = torch.zeros(3)
+        std = torch.ones(3)
+    else:
+        all_t = torch.cat(all_t, dim=0)  # (N, 3)
+        mean = all_t.mean(dim=0)
+        std = all_t.std(dim=0)
+        # avoid division by zero
+        std[std == 0] = 1.0
+
+    return mean, std
