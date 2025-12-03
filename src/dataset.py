@@ -110,7 +110,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
                  split: str = 'lightbox',
                  transforms=None,
                  max_samples: int = None,
-                 train_ratio: float = 0.8,
+                 train_ratio: float = 0.9,
                  train: bool = True,
                  ):
 
