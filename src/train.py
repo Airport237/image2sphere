@@ -339,14 +339,14 @@ def main(args):
         logger.info(log_str)
         time_before_epoch = time.perf_counter()
 
-    # quick sanity check on a few predictions
-    print("\n=== Debugging predictions on test set ===")
-    debug_predictions(args, model, test_loader, n_samples=3, visualize=True)
+    # # quick sanity check on a few predictions
+    # print("\n=== Debugging predictions on test set ===")
+    # debug_predictions(args, model, test_loader, n_samples=3, visualize=True)
 
-    if args.dataset_name.find('symsol') > -1:
-        evaluate_ll(args, model, test_loader)
-    else:
-        evaluate_error(args, model, test_loader)
+    # if args.dataset_name.find('symsol') > -1:
+    #     evaluate_ll(args, model, test_loader)
+    # else:
+    #     evaluate_error(args, model, test_loader)
 
     # if args.dataset_name == 'speed+':
     #     evaluate_speedplus_kelvins(args, model, test_loader)
