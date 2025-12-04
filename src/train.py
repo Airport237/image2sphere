@@ -353,7 +353,7 @@ def main(args):
     #     return
 
     torch.save({
-        'epoch': epoch,
+        'epoch': args.num_epochs,
         'model_state_dict': model.state_dict(),
         'done': True,
     }, os.path.join(args.fdir, "checkpoint.pt"))
