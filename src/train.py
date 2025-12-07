@@ -1,4 +1,4 @@
-from src.speedplus_utils import kelvins_pose_score
+from src.speedplus_utils import kelvins_pose_score, compute_translation_stats
 from src.predictor import I2S
 from src.so3_utils import rotation_error, nearest_rotmat
 from src.pascal_dataset import Pascal3D
@@ -186,10 +186,18 @@ def main(args):
                        logging.FileHandler(os.path.join(args.fdir, "log.txt"))]
 
     train_loader, test_loader, args = create_dataloaders(args)
-
     print("post trainloader")
+
+    trans_mean, trans_std = compute_translation_stats(train_loader)
+    print(f"Translation mean: {trans_mean.numpy()}")
+    print(f"Translation std:  {trans_std.numpy()}")
+
     model = create_model(args)
-    print("post model creatiion")
+    print("post model creation")
+
+    # push stats into model buffers (and onto correct device)
+    model.trans_mean.data = trans_mean.to(args.device)
+    model.trans_std.data = trans_std.to(args.device)
 
     optimizer = torch.optim.SGD(
         model.parameters(),
@@ -386,14 +394,18 @@ def evaluate_speedplus_kelvins(args, model, loader):
                 img.device)  # Move to GPU if needed
 
             # translation prediction
-            _, t_pred = model.forward(img, cls, return_translation=True)
+            # translation prediction (normalized)
+            _, t_pred_norm = model.forward(img, cls, return_translation=True)
 
             # ensure both are on same device as GT
             R_pred = R_pred.to(R_gt.device)
-            t_pred = t_pred.to(t_gt.device)
+            t_pred_norm = t_pred_norm.to(t_gt.device)
 
             R_pred = R_pred.squeeze()
-            t_pred = t_pred.squeeze()
+            t_pred_norm = t_pred_norm.squeeze()
+
+            # Unnormalize for kelvins
+            t_pred = t_pred_norm * model.trans_std + model.trans_mean
 
             pose_score, s_orient, s_pos = kelvins_pose_score(
                 t_pred, R_pred, t_gt, R_gt
@@ -447,6 +459,7 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
                 _, trans_pred = model.forward(
                     batch['img'], batch['cls'], return_translation=True
                 )
+                trans_pred = trans_pred * model.trans_std + model.trans_mean
             except TypeError:
                 pass
 
