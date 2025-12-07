@@ -13,6 +13,7 @@ import numpy as np
 import torch
 import warnings
 import matplotlib.pyplot as plt
+
 warnings.filterwarnings('ignore', category=UserWarning)
 
 
@@ -117,7 +118,6 @@ def evaluate_error(args, model, test_loader):
         err = rotation_error(pred_rotmat, gt_rotmat)
 
         errors.append(err.numpy())
-        # make sure we always have a 1D array so concatenate works
         clss.append(batch['cls'].cpu().numpy().reshape(-1))
 
     errors = np.concatenate(errors)
@@ -143,7 +143,7 @@ def create_model(args):
                 eval_grid_rec_level=args.eval_grid_rec_level,
                 eval_use_gradient_ascent=args.eval_use_gradient_ascent,
                 include_class_label=args.include_class_label,
-                pred_translation=True,  # set them hardcoded for now
+                pred_translation=True,  # hardcoded for now
                 trans_hidden=256,
                 ).to(args.device)
 
@@ -184,6 +184,7 @@ def main(args):
     train_loader, test_loader, args = create_dataloaders(args)
     print("post trainloader")
 
+    # translation normalization statistics
     trans_mean, trans_std = compute_translation_stats(train_loader)
     print(f"Translation mean: {trans_mean.numpy()}")
     print(f"Translation std:  {trans_std.numpy()}")
@@ -235,6 +236,30 @@ def main(args):
     else:
         starting_epoch = 1
 
+    # ---------- freeze/unfreeze based on training stage ----------
+    if args.train_stage == 'rot_pretrain':
+        # train rotation tower; freeze translation head
+        if hasattr(model, "translation_head") and model.translation_head is not None:
+            for p in model.translation_head.parameters():
+                p.requires_grad = False
+
+    elif args.train_stage == 'trans_pretrain':
+        # freeze everything, then unfreeze encoder + translation head
+        for p in model.parameters():
+            p.requires_grad = False
+
+        for p in model.encoder.parameters():
+            p.requires_grad = True
+
+        if hasattr(model, "translation_head") and model.translation_head is not None:
+            for p in model.translation_head.parameters():
+                p.requires_grad = True
+
+    elif args.train_stage == 'joint':
+        # ensure everything is trainable
+        for p in model.parameters():
+            p.requires_grad = True
+
     data = []
     print("befor eepocs")
     for epoch in range(starting_epoch, args.num_epochs + 1):
@@ -249,7 +274,30 @@ def main(args):
         model.train()
         for batch_idx, batch in enumerate(train_loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
-            loss, stats = model.compute_loss(**batch)
+
+            # choose loss based on training stage
+            if args.train_stage == 'rot_pretrain':
+                loss, stats = model.compute_rot_loss(
+                    img=batch['img'],
+                    cls=batch['cls'],
+                    rot=batch['rot'],
+                )
+            elif args.train_stage == 'trans_pretrain':
+                loss, stats = model.compute_trans_loss(
+                    img=batch['img'],
+                    cls=batch['cls'],
+                    trans=batch['trans'],
+                )
+            elif args.train_stage == 'joint':
+                loss, stats = model.compute_loss(
+                    img=batch['img'],
+                    cls=batch['cls'],
+                    rot=batch['rot'],
+                    trans=batch.get('trans', None),
+                    lambda_trans=args.lambda_trans,
+                )
+            else:
+                raise ValueError(f"Unknown train_stage {args.train_stage}")
 
             optimizer.zero_grad()
             loss.backward()
@@ -261,9 +309,18 @@ def main(args):
 
         # aggregate train stats
         train_loss /= (batch_idx + 1)
-        train_rot_errs = np.concatenate(train_rot_errs)          # radians
-        train_rot_err_deg_median = np.degrees(np.median(train_rot_errs))
-        train_rot_err_deg_mean = np.degrees(np.mean(train_rot_errs))
+
+        if len(train_rot_errs) and train_rot_errs[0].size > 0:
+            train_rot_errs_cat = np.concatenate(train_rot_errs)   # radians
+            train_rot_err_deg_median = np.degrees(
+                np.median(train_rot_errs_cat))
+            train_rot_err_deg_mean = np.degrees(np.mean(train_rot_errs_cat))
+            train_rot_err_median = float(np.median(train_rot_errs_cat))
+        else:
+            train_rot_err_deg_median = float("nan")
+            train_rot_err_deg_mean = float("nan")
+            train_rot_err_median = float("nan")
+
         train_trans_losses = np.array(train_trans_losses)
         train_trans_loss_mean = float(train_trans_losses.mean())
 
@@ -279,7 +336,28 @@ def main(args):
         for batch_idx, batch in enumerate(test_loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             with torch.no_grad():
-                loss, stats = model.compute_loss(**batch)
+                if args.train_stage == 'rot_pretrain':
+                    loss, stats = model.compute_rot_loss(
+                        img=batch['img'],
+                        cls=batch['cls'],
+                        rot=batch['rot'],
+                    )
+                elif args.train_stage == 'trans_pretrain':
+                    loss, stats = model.compute_trans_loss(
+                        img=batch['img'],
+                        cls=batch['cls'],
+                        trans=batch['trans'],
+                    )
+                elif args.train_stage == 'joint':
+                    loss, stats = model.compute_loss(
+                        img=batch['img'],
+                        cls=batch['cls'],
+                        rot=batch['rot'],
+                        trans=batch.get('trans', None),
+                        lambda_trans=args.lambda_trans,
+                    )
+                else:
+                    raise ValueError(f"Unknown train_stage {args.train_stage}")
 
             test_loss += loss.item()
             test_rot_errs.append(stats["rot_acc"])
@@ -287,31 +365,42 @@ def main(args):
             test_cls.append(batch['cls'].cpu().numpy().reshape(-1))
 
         test_loss /= (batch_idx + 1)
-        test_rot_errs = np.concatenate(test_rot_errs)
-        test_rot_err_deg_median = np.degrees(np.median(test_rot_errs))
-        test_rot_err_deg_mean = np.degrees(np.mean(test_rot_errs))
+
+        if len(test_rot_errs) and test_rot_errs[0].size > 0:
+            test_rot_errs_cat = np.concatenate(test_rot_errs)
+            test_rot_err_deg_median = np.degrees(np.median(test_rot_errs_cat))
+            test_rot_err_deg_mean = np.degrees(np.mean(test_rot_errs_cat))
+            test_rot_err_median = float(np.median(test_rot_errs_cat))
+        else:
+            test_rot_err_deg_median = float("nan")
+            test_rot_err_deg_mean = float("nan")
+            test_rot_err_median = float("nan")
+
         test_trans_losses = np.array(test_trans_losses)
         test_trans_loss_mean = float(test_trans_losses.mean())
         test_cls = np.concatenate(test_cls)
 
-        # per-class rotation error stats (in degrees)
-        per_class_err = {}
-        for i, cls_name in enumerate(args.class_names):
-            mask = test_cls == i
-            if mask.any():
-                per_class_err[cls_name] = f"{np.degrees(np.median(test_rot_errs[mask])):.1f}"
-            else:
-                per_class_err[cls_name] = "nan"
-
-        logger.info(str(per_class_err))
+        # per-class rotation error stats (in degrees) – only when we actually trained/used rotation
+        if args.train_stage != 'trans_pretrain' and len(test_rot_errs) and test_rot_errs[0].size > 0:
+            per_class_err = {}
+            for i, cls_name in enumerate(args.class_names):
+                mask = test_cls == i
+                if mask.any():
+                    per_class_err[cls_name] = f"{np.degrees(np.median(test_rot_errs_cat[mask])):.1f}"
+                else:
+                    per_class_err[cls_name] = "nan"
+            logger.info(str(per_class_err))
+        else:
+            logger.info(
+                "Skipping per-class rotation stats (no rotation metrics in this stage).")
 
         data.append(dict(
             epoch=epoch,
             time_elapsed=time.perf_counter() - time_before_epoch,
             train_loss=train_loss,
             test_loss=test_loss,
-            train_acc_median=np.median(train_rot_errs),
-            test_acc_median=np.median(test_rot_errs),
+            train_acc_median=train_rot_err_median,
+            test_acc_median=test_rot_err_median,
             lr=optimizer.param_groups[0]['lr'],
         ))
         lr_scheduler.step()
@@ -380,25 +469,17 @@ def evaluate_speedplus_kelvins(args, model, loader):
             R_gt = batch['rot']      # (B, 3, 3)
             t_gt = batch['trans']    # (B, 3)
 
-            R_gt = R_gt.squeeze()
-            t_gt = t_gt.squeeze()
-
-            # print(f"R-gt: {R_gt}")
-            # print(f"t-gt: {t_gt}")
+            # keep batch dimension; kelvins_pose_score should handle batched
+            # (don't squeeze away B=1 in a weird way)
             # rotation prediction (model.predict returns CPU tensors!)
-            R_pred = model.predict(img, cls).to(
-                img.device)  # Move to GPU if needed
+            R_pred = model.predict(img, cls).to(img.device)  # (B, 3, 3)
 
-            # translation prediction
             # translation prediction (normalized)
             _, t_pred_norm = model.forward(img, cls, return_translation=True)
 
             # ensure both are on same device as GT
             R_pred = R_pred.to(R_gt.device)
             t_pred_norm = t_pred_norm.to(t_gt.device)
-
-            R_pred = R_pred.squeeze()
-            t_pred_norm = t_pred_norm.squeeze()
 
             # Unnormalize for kelvins
             t_pred = t_pred_norm * model.trans_std + model.trans_mean
@@ -407,17 +488,18 @@ def evaluate_speedplus_kelvins(args, model, loader):
                 t_pred, R_pred, t_gt, R_gt
             )
 
-            pose_score = torch.as_tensor(pose_score,  device='cpu').reshape(-1)
-            s_orient = torch.as_tensor(s_orient,    device='cpu').reshape(-1)
-            s_pos = torch.as_tensor(s_pos,       device='cpu').reshape(-1)
+            pose_score = torch.as_tensor(pose_score, device='cpu').reshape(-1)
+            s_orient = torch.as_tensor(s_orient, device='cpu').reshape(-1)
+            s_pos = torch.as_tensor(s_pos, device='cpu').reshape(-1)
 
             all_pose_scores.append(pose_score)
             all_orient_scores.append(s_orient)
             all_pos_scores.append(s_pos)
 
-    all_pose_scores = np.array(all_pose_scores)
-    all_orient_scores = np.array(all_orient_scores)
-    all_pos_scores = np.array(all_pos_scores)
+    # concatenate tensors, then move to numpy
+    all_pose_scores = torch.cat(all_pose_scores).numpy()
+    all_orient_scores = torch.cat(all_orient_scores).numpy()
+    all_pos_scores = torch.cat(all_pos_scores).numpy()
 
     print("\n=== Kelvins / SPEED+ scoring (lightbox) ===")
     print(f"Mean orientation score (deg):   {all_orient_scores.mean():.4f}")
@@ -426,7 +508,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     print("===========================================\n")
 
     return {
-        "pose_score_mean": float((all_pose_scores.mean())),
+        "pose_score_mean": float(all_pose_scores.mean()),
         "orient_score_mean": float(all_orient_scores.mean()),
         "pos_score_mean": float(all_pos_scores.mean()),
     }
@@ -443,7 +525,7 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
 
             # rotation prediction (same as evaluate_error)
             rot_pred = model.predict(batch['img'], batch['cls'])   # (B, 3, 3)
-            rot_gt = batch['rot']                                # (B, 3, 3)
+            rot_gt = batch['rot']                                  # (B, 3, 3)
 
             rot_pred = rot_pred.to(args.device)
             rot_gt = rot_gt.to(args.device)
@@ -452,10 +534,10 @@ def debug_predictions(args, model, loader, n_samples=5, visualize=True):
             trans_gt = batch.get('trans', None)
             trans_pred = None
             try:
-                _, trans_pred = model.forward(
+                _, trans_pred_norm = model.forward(
                     batch['img'], batch['cls'], return_translation=True
                 )
-                trans_pred = trans_pred * model.trans_std + model.trans_mean
+                trans_pred = trans_pred_norm * model.trans_std + model.trans_mean
             except TypeError:
                 pass
 
@@ -581,6 +663,13 @@ if __name__ == "__main__":
     parser.add_argument('--use_nesterov', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0)
 
+    # new: training stage + translation loss weight
+    parser.add_argument('--train_stage', type=str, default='joint',
+                        choices=['rot_pretrain', 'trans_pretrain', 'joint'],
+                        help='Rotation pretrain, translation pretrain, or joint training.')
+    parser.add_argument('--lambda_trans', type=float, default=1.0,
+                        help='Weight for translation loss in joint training.')
+
     parser.add_argument('--dataset_path', type=str, default='./datasets')
     parser.add_argument('--dataset_name', type=str, default='modelnet10',
                         choices=['modelnet10',          # modelnet10 with 100 training views per instance
@@ -589,7 +678,7 @@ if __name__ == "__main__":
                                  'symsolI-50000',  # 5 classes of symsolI with 50k training views each
                                  'symsolII-50000',  # symsol sphX with 50k training views each
                                  'symsolIII-50000',  # symsol cylO with 50k training views each
-                                 # symsol tetX with 50k training views each# Stanford speed+ dataset (a small sample)
+                                 # symsol tetX with 50k training views each
                                  'symsolIIII-50000',
                                  # Stanford speed+ dataset (a small sample)
                                  'speed+',

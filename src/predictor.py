@@ -32,7 +32,7 @@ class BaseSO3Predictor(nn.Module):
         self.num_classes = num_classes
 
         pretrained = encoder.find('pretrained') > -1
-        size = int(re.findall('\d+', encoder)[0])
+        size = int(re.findall(r'\d+', encoder)[0])
         self.encoder = ResNet(size, pretrained, pool_features)
 
     def save(self, path):
@@ -79,7 +79,7 @@ class I2S(BaseSO3Predictor):
                 nn.Flatten(),              # (B, C, 1, 1) -> (B, C)
                 nn.Linear(c, trans_hidden),
                 nn.ReLU(inplace=True),
-                nn.Linear(trans_hidden, 3),   # (x, y, z)
+                nn.Linear(trans_hidden, 3),   # (x, y, z) in normalized coords
             )
         else:
             self.translation_head = None
@@ -117,6 +117,7 @@ class I2S(BaseSO3Predictor):
         self.eval_grid_rec_level = eval_grid_rec_level
         self.eval_use_gradient_ascent = eval_use_gradient_ascent
 
+        # train grid
         output_xyx = so3_utils.so3_healpix_grid(rec_level=train_grid_rec_level)
         self.register_buffer(
             "output_wigners",
@@ -127,6 +128,7 @@ class I2S(BaseSO3Predictor):
             o3.angles_to_matrix(*output_xyx)
         )
 
+        # eval grid
         output_xyx = so3_utils.so3_healpix_grid(rec_level=eval_grid_rec_level)
         try:
             self.eval_wigners = torch.load('eval_rec5.pt')
@@ -137,10 +139,14 @@ class I2S(BaseSO3Predictor):
         self.eval_rotmats = o3.angles_to_matrix(*output_xyx)
 
     def forward(self, x, o, return_translation: bool = False):
+        """
+        x: (B, 3, H, W)
+        o: (B, 1) class indices
+        """
         # encoder features
         feat = self.encoder(x)  # (B, C, H, W)
 
-        # translation head from encoder features only
+        # translation head from encoder features only (normalized space)
         trans_pred = None
         if self.pred_translation and self.translation_head is not None:
             trans_pred = self.translation_head(feat)  # (B, 3)
@@ -162,29 +168,24 @@ class I2S(BaseSO3Predictor):
         # S2 -> SO(3) lifting
         weight, _ = self.feature_sphere()
         x = self.o3_conv(x, weight=weight)
-
         x = self.so3_activation(x)
 
-        # SO(3) convolution
-        x = self.so3_conv(x)  # SO(3) Fourier coefficients
+        # SO(3) convolution → Fourier coefficients
+        x = self.so3_conv(x)  # (B, F_hidden, ... in SO(3) Fourier basis)
 
         if return_translation:
             return x, trans_pred
 
         return x
 
-    def compute_loss(self, img, cls, rot, trans=None, lambda_trans: float = 1.0):
+    # ---------- separated losses ----------
+
+    def compute_rot_loss(self, img, cls, rot):
         """
-        img:   (B, 3, H, W)
-        cls:   (B, 1)
-        rot:   ground-truth rotation (as expected by nearest_rotmat)
-        trans: (B, 3) translation vector, if available
+        Rotation-only loss (for rot_pretrain / joint analysis).
         """
-        if self.pred_translation and trans is not None:
-            x, trans_pred = self.forward(img, cls, return_translation=True)
-        else:
-            x = self.forward(img, cls)
-            trans_pred = None
+        # forward through rotation path
+        x = self.forward(img, cls, return_translation=False)
 
         # rotation classification loss
         grid_signal, rotmats = self.query_train_grid(x, rot)
@@ -194,16 +195,60 @@ class I2S(BaseSO3Predictor):
         with torch.no_grad():
             pred_id = grid_signal.max(dim=1)[1]
             pred_rotmat = rotmats[pred_id]
-            rot_acc = so3_utils.rotation_error(rot, pred_rotmat)  # (B,)
+            rot_err = so3_utils.rotation_error(rot, pred_rotmat)  # (B,)
+
+        stats = {
+            "rot_acc": rot_err.cpu().numpy(),  # radians
+            "rot_loss": rot_loss.item(),
+            "trans_loss": 0.0,
+        }
+        return rot_loss, stats
+
+    def compute_trans_loss(self, img, cls, trans):
+        """
+        Translation-only loss (for trans_pretrain).
+        Uses encoder + translation head, with normalized translation GT.
+        """
+        assert self.pred_translation, "Translation head is disabled!"
+
+        # normalized prediction
+        _, trans_pred_norm = self.forward(img, cls, return_translation=True)
+
+        # normalize GT using model's buffers
+        trans_norm = (trans - self.trans_mean) / self.trans_std
+
+        trans_loss = nn.functional.mse_loss(trans_pred_norm, trans_norm)
+
+        stats = {
+            "rot_acc": np.array([]),   # no rotation metric here
+            "rot_loss": 0.0,
+            "trans_loss": trans_loss.item(),
+        }
+        return trans_loss, stats
+
+    def compute_loss(self, img, cls, rot, trans=None, lambda_trans: float = 1.0):
+        """
+        Joint loss: rotation classification + lambda_trans * translation MSE (normalized).
+        This is used in the 'joint' training stage.
+        """
+        if self.pred_translation and trans is not None:
+            x, trans_pred_norm = self.forward(img, cls, return_translation=True)
+        else:
+            x = self.forward(img, cls)
+            trans_pred_norm = None
+
+        # rotation classification loss
+        grid_signal, rotmats = self.query_train_grid(x, rot)
+        rot_id = so3_utils.nearest_rotmat(rot, rotmats)
+        rot_loss = nn.CrossEntropyLoss()(grid_signal, rot_id)
+
+        with torch.no_grad():
+            pred_id = grid_signal.max(dim=1)[1]
+            pred_rotmat = rotmats[pred_id]
+            rot_err = so3_utils.rotation_error(rot, pred_rotmat)  # (B,)
 
         if self.pred_translation and trans is not None:
-            # forward gives normalized prediction
-            x, trans_pred_norm = self.forward(
-                img, cls, return_translation=True)
-
-            # normalize GT using model's mean/std
             trans_norm = (trans - self.trans_mean) / self.trans_std
-
             trans_loss = nn.functional.mse_loss(trans_pred_norm, trans_norm)
             loss = rot_loss + lambda_trans * trans_loss
         else:
@@ -211,15 +256,17 @@ class I2S(BaseSO3Predictor):
             loss = rot_loss
 
         stats = {
-            "rot_acc": rot_acc.cpu().numpy(),   # per-sample rotation error (radians)
+            "rot_acc": rot_err.cpu().numpy(),   # per-sample rotation error (radians)
             "rot_loss": rot_loss.item(),
             "trans_loss": trans_loss.item(),
         }
 
         return loss, stats
 
+    # ---------- rotation grid / prediction utilities ----------
+
     def query_train_grid(self, x, gt_rot=None):
-        '''x is signal over fourier basis'''
+        """x is signal over fourier basis."""
         if self.train_grid_mode == 'random':
             idx = torch.randint(len(self.output_rotmats),
                                 (self.train_grid_n_points,))
@@ -240,6 +287,8 @@ class I2S(BaseSO3Predictor):
         elif self.train_grid_mode == 'healpix':
             wigners = self.output_wigners
             rotmats = self.output_rotmats
+        else:
+            raise ValueError(f"Unknown train_grid_mode: {self.train_grid_mode}")
 
         return torch.matmul(x, wigners).squeeze(1), rotmats
 
@@ -270,7 +319,7 @@ class I2S(BaseSO3Predictor):
 
     @torch.no_grad()
     def compute_probabilities(self, x, o):
-        ''' compute probabilities over eval grid'''
+        """Compute probabilities over eval grid."""
         harmonics = self.forward(x, o)
 
         # move to cpu to avoid memory issues, at expense of speed
