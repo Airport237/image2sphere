@@ -62,6 +62,8 @@ class I2S(BaseSO3Predictor):
 
         print("in model create")
         self.pred_translation = pred_translation
+        self.register_buffer("trans_mean", torch.zeros(3))
+        self.register_buffer("trans_std", torch.ones(3))
         self.lmax = lmax
         self.include_class_label = include_class_label
 
@@ -194,9 +196,15 @@ class I2S(BaseSO3Predictor):
             pred_rotmat = rotmats[pred_id]
             rot_acc = so3_utils.rotation_error(rot, pred_rotmat)  # (B,)
 
-        # translation regression loss (optional)
         if self.pred_translation and trans is not None:
-            trans_loss = nn.functional.mse_loss(trans_pred, trans)
+            # forward gives normalized prediction
+            x, trans_pred_norm = self.forward(
+                img, cls, return_translation=True)
+
+            # normalize GT using model's mean/std
+            trans_norm = (trans - self.trans_mean) / self.trans_std
+
+            trans_loss = nn.functional.mse_loss(trans_pred_norm, trans_norm)
             loss = rot_loss + lambda_trans * trans_loss
         else:
             trans_loss = torch.tensor(0.0, device=img.device)
@@ -209,8 +217,6 @@ class I2S(BaseSO3Predictor):
         }
 
         return loss, stats
-
-
 
     def query_train_grid(self, x, gt_rot=None):
         '''x is signal over fourier basis'''
@@ -273,5 +279,3 @@ class I2S(BaseSO3Predictor):
         probs = torch.matmul(harmonics, self.eval_wigners).squeeze(1)
 
         return nn.Softmax(dim=1)(probs)
-
-    
