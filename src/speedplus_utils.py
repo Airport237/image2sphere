@@ -109,7 +109,7 @@ def kelvins_position_score(t_est, t_gt, tol=0.002173):
 #     return s_orient + s_pos, s_orient, s_pos
 
 def kelvins_pose_score(t_pr, ori_pr, t_gt, ori_gt, representation='quaternion',
-                       applyThreshold=True, theta_q=0.5, theta_t=0.005):
+                       applyThreshold=True, theta_q=0.169, theta_t=0.002173):
     # theta_q: rotation threshold [deg]
     # theta_t: normalized translation threshold [m/m]
     # print(f"GT T: {t_gt} | P T: {t_pr}")
