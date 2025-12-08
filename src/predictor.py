@@ -5,6 +5,7 @@ import time
 from torch import Tensor
 import numpy as np
 import torch.nn as nn
+import torch.nn.functional as F
 from e3nn import o3
 
 from e3nn.o3 import Irreps
@@ -37,6 +38,95 @@ class BaseSO3Predictor(nn.Module):
 
     def save(self, path):
         torch.save(self.state_dict(), path)
+
+
+class AdvancedFullyConvTranslationHead(nn.Module):
+    """
+    Stronger fully-convolutional translation head
+    - Multi-scale convs (dilated + regular)
+    - Residual refinement
+    - Squeeze-and-Excitation style channel attention
+    - Global avg + max pooling before final MLP
+    """
+
+    def __init__(
+        self,
+        in_channels: int,
+        base_channels: int = 256,
+        mid_channels: int = 256,
+        num_res_blocks: int = 3,
+        mlp_hidden: int = 256,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+
+        # Stem: project encoder features
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, base_channels, kernel_size=3,
+                      stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(base_channels),
+            nn.ReLU(inplace=True),
+        )
+
+        # Multi-scale context block: normal + dilated conv in parallel
+        self.ms_conv = nn.ModuleList([
+            nn.Conv2d(base_channels, mid_channels, kernel_size=3,
+                      padding=1, bias=False),          # standard
+            nn.Conv2d(base_channels, mid_channels, kernel_size=3,
+                      padding=2, dilation=2, bias=False),  # dilated
+        ])
+        self.ms_bn = nn.BatchNorm2d(2 * mid_channels)
+
+        # Residual refinement on combined multi-scale features
+        self.res_blocks = nn.Sequential(*[
+            ResidualBlock(2 * mid_channels, 2 * mid_channels)
+            for _ in range(num_res_blocks)
+        ])
+
+        # Squeeze-and-Excitation (channel attention)
+        self.se_fc1 = nn.Linear(2 * mid_channels, (2 * mid_channels) // 4)
+        self.se_fc2 = nn.Linear((2 * mid_channels) // 4, 2 * mid_channels)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        # MLP to 3D
+        self.fc = nn.Sequential(
+            nn.Linear(2 * (2 * mid_channels), mlp_hidden),  # concat(avg, max)
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(mlp_hidden, 3),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # x: (B, C, H, W)
+        x = self.stem(x)  # (B, base_channels, H, W)
+
+        # Multi-scale convs
+        ms_feats = []
+        for conv in self.ms_conv:
+            ms_feats.append(conv(x))
+        x = torch.cat(ms_feats, dim=1)      # (B, 2*mid_channels, H, W)
+        x = self.ms_bn(x)
+        x = F.relu(x, inplace=True)
+
+        # Residualss
+        x = self.res_blocks(x)
+
+        b, c, _, _ = x.shape
+        squeeze = self.avg_pool(x).view(b, c)  # (B, C)
+        excite = self.se_fc1(squeeze)
+        excite = F.relu(excite, inplace=True)
+        excite = self.se_fc2(excite)
+        excite = torch.sigmoid(excite).view(b, c, 1, 1)  # (B, C, 1, 1)
+        x = x * excite  # (B, C, H, W)
+
+        avg = self.avg_pool(x).view(b, c)  # (B, C)
+        mx = self.max_pool(x).view(b, c)   # (B, C)
+        g = torch.cat([avg, mx], dim=1)    # (B, 2C)
+
+        # MLP -> (B, 3) in normalized translation space
+        t = self.fc(g)
+        return t
 
 
 class FullyConvTranslationHead(nn.Module):
@@ -162,11 +252,16 @@ class I2S(BaseSO3Predictor):
         if self.include_class_label:
             proj_input_shape[0] += num_classes
 
-        # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = FullyConvTranslationHead(  # can be changed to ResNetTranslationHead
-                in_channels=c, hidden=128)
+            self.translation_head = AdvancedFullyConvTranslationHead(
+                in_channels=c,
+                base_channels=256,
+                mid_channels=256,
+                num_res_blocks=3,
+                mlp_hidden=256,
+                dropout=0.1,
+            )
         else:
             self.translation_head = None
 
