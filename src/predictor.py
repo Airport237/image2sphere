@@ -67,6 +67,7 @@ class I2S(BaseSO3Predictor):
         self.register_buffer("trans_std", torch.ones(3))
         self.lmax = lmax
         self.include_class_label = include_class_label
+        self.translation_head = translation_head
 
         proj_input_shape = list(self.encoder.output_shape)
         if self.include_class_label:
