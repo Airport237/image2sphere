@@ -45,13 +45,15 @@ def create_dataloaders(args):
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split=args.speedplus_split,   # domain name
-            train=True
+            train=True,
+            masks_flag=args.speedplus_masks
         )
         print("aftter train")
         test_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split=args.speedplus_test,
-            train=False
+            train=False,
+            masks_flag=args.speedplus_masks
         )
     else:
         raise TypeError('Invalid dataset name')
@@ -604,6 +606,8 @@ if __name__ == "__main__":
 
     parser.add_argument('--speedplus_split', type=str, default="synthetic")
     parser.add_argument('--speedplus_test', type=str, default="lightbox")
+    parser.add_argument('--speedplus_masks', type=bool, default=False)
+
     args = parser.parse_args()
 
     start_time = datetime.now()
