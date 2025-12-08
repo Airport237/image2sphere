@@ -45,7 +45,8 @@ def create_dataloaders(args):
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split=args.speedplus_split,   # domain name
-            train=True
+            train=True,
+            train_ratio = args.data_split
         )
         print("aftter train")
         test_set = SPEEDPLUSDataset(
@@ -567,6 +568,8 @@ if __name__ == "__main__":
     parser.add_argument('--sgd_momentum', type=float, default=0.9)
     parser.add_argument('--use_nesterov', type=int, default=1)
     parser.add_argument('--weight_decay', type=float, default=0)
+    parser.add_argument('--data_split', type=float, default=0.9)
+
 
     parser.add_argument('--dataset_path', type=str, default='./datasets')
     parser.add_argument('--dataset_name', type=str, default='modelnet10',
