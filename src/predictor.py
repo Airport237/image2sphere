@@ -57,6 +57,7 @@ class I2S(BaseSO3Predictor):
                  include_class_label: bool = False,
                  pred_translation: bool = False,
                  trans_hidden: int = 256,
+                 translation_head: str = 'mlp',
                  ):
         super().__init__(num_classes, encoder, pool_features=False)
 
@@ -72,7 +73,7 @@ class I2S(BaseSO3Predictor):
             proj_input_shape[0] += num_classes
 
         # translation head (from encoder features only)
-        if self.pred_translation:
+        if self.translation_head == "mlp":
             c, h, w = self.encoder.output_shape
             self.translation_head = nn.Sequential(
                 nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
@@ -81,6 +82,9 @@ class I2S(BaseSO3Predictor):
                 nn.ReLU(inplace=True),
                 nn.Linear(trans_hidden, 3),   # (x, y, z)
             )
+        elif self.translation_head is "conv":
+            c, h, w = self.encoder.output_shape
+            self.translation_head = None
         else:
             self.translation_head = None
 

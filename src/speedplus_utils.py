@@ -124,6 +124,7 @@ def kelvins_pose_score(t_pr, ori_pr, t_gt, ori_gt, representation='quaternion',
     # Check if within threshold
     if applyThreshold and err_q < theta_q:
         speed_q = 0.0
+        
 
     if applyThreshold and speed_t < theta_t:
         speed_t = 0.0

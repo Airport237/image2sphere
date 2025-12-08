@@ -46,7 +46,7 @@ def create_dataloaders(args):
             root=args.dataset_path,
             split=args.speedplus_split,   # domain name
             train=True,
-            train_ratio = args.data_split
+            train_ratio=args.data_split
         )
         print("aftter train")
         test_set = SPEEDPLUSDataset(
@@ -146,6 +146,7 @@ def create_model(args):
                 include_class_label=args.include_class_label,
                 pred_translation=True,  # set them hardcoded for now
                 trans_hidden=256,
+                trans_head = args.translation_head
                 ).to(args.device)
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -423,8 +424,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
 
     print("\n=== Kelvins / SPEED+ scoring (lightbox) ===")
     print(f"Mean orientation score (deg):   {all_orient_scores.mean():.4f}")
-    print(f"Mean position score (norm):     {all_pos_scores.mean():.6f}")
-    print(f"Mean pose score (leaderboard):  {all_pose_scores.mean():.4f}")
+    print(f"Mean position score (norm):     {all_pose_scores.mean():.6f}")
+    print(f"Mean pose score (leaderboard):  {all_pos_scores.mean():.4f}")
     print("===========================================\n")
 
     return {
@@ -584,7 +585,6 @@ if __name__ == "__main__":
     parser.add_argument('--weight_decay', type=float, default=0)
     parser.add_argument('--data_split', type=float, default=0.9)
 
-
     parser.add_argument('--dataset_path', type=str, default='./datasets')
     parser.add_argument('--dataset_name', type=str, default='modelnet10',
                         choices=['modelnet10',          # modelnet10 with 100 training views per instance
@@ -605,6 +605,7 @@ if __name__ == "__main__":
 
     parser.add_argument('--speedplus_split', type=str, default="synthetic")
     parser.add_argument('--speedplus_test', type=str, default="lightbox")
+    parser.add_argument('--translation_head', type=str, default="mlp")
     args = parser.parse_args()
 
     start_time = datetime.now()
