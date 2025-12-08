@@ -144,6 +144,7 @@ def main(args):
                                 map_location=args.device)
         if checkpoint.get('done', False):
             print("Found completed checkpoint; exiting.")
+            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
             evaluate_speedplus_kelvins(args, model, test_loader)
             return
         else:
