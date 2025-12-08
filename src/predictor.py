@@ -6,6 +6,8 @@ from torch import Tensor
 import numpy as np
 import torch.nn as nn
 from e3nn import o3
+import torch.nn.functional as F
+
 
 from e3nn.o3 import Irreps
 from e3nn.nn import Activation
