@@ -45,7 +45,7 @@ def create_dataloaders(args):
         train_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split=args.speedplus_split,   # domain name
-            train=True
+            train=True,
             masks_flag=args.speedplus_masks 
         )
         print("aftter train")
