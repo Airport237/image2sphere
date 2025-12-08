@@ -39,6 +39,97 @@ class BaseSO3Predictor(nn.Module):
         torch.save(self.state_dict(), path)
 
 
+class FullyConvTranslationHead(nn.Module):
+    def __init__(self, in_channels, hidden=128):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(in_channels, hidden, 3, padding=1),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(hidden, hidden, 3, padding=1),
+            nn.ReLU(inplace=True),
+
+            nn.AdaptiveAvgPool2d(1),
+
+            nn.Conv2d(hidden, 3, kernel_size=1),  # (B, 3, 1, 1)
+            nn.Flatten(),  # -> (B, 3)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class ResidualBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super().__init__()
+
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3,
+                               stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3,
+                               stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+
+        # optional 1x1 conv if channels or stride change
+        if stride != 1 or in_channels != out_channels:
+            self.downsample = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels,
+                          kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels),
+            )
+        else:
+            self.downsample = None
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = F.relu(out, inplace=True)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = F.relu(out, inplace=True)
+        return out
+
+
+class ResNetTranslationHead(nn.Module):
+    def __init__(self, in_channels, hidden_channels=256, num_blocks=2):
+        super().__init__()
+
+        # first conv to project features
+        self.stem = nn.Sequential(
+            nn.Conv2d(in_channels, hidden_channels, kernel_size=3,
+                      stride=1, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_channels),
+            nn.ReLU(inplace=True),
+        )
+
+        # stack a few residual blocks
+        blocks = []
+        for _ in range(num_blocks):
+            blocks.append(ResidualBlock(hidden_channels, hidden_channels))
+        self.res_layers = nn.Sequential(*blocks)
+
+        # global pool + linear to 3D translation
+        self.pool = nn.AdaptiveAvgPool2d(1)  # (B, C, 1, 1)
+        self.fc = nn.Linear(hidden_channels, 3)
+
+    def forward(self, x):
+        x = self.stem(x)          # (B, C, H, W)
+        x = self.res_layers(x)    # residual refinement
+        x = self.pool(x)          # (B, C, 1, 1)
+        x = torch.flatten(x, 1)   # (B, C)
+        x = self.fc(x)            # (B, 3)
+        return x
+
+
 class I2S(BaseSO3Predictor):
     def __init__(self,
                  num_classes: int = 1,
@@ -74,13 +165,8 @@ class I2S(BaseSO3Predictor):
         # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = nn.Sequential(
-                nn.AdaptiveAvgPool2d(1),   # (B, C, H, W) -> (B, C, 1, 1)
-                nn.Flatten(),              # (B, C, 1, 1) -> (B, C)
-                nn.Linear(c, trans_hidden),
-                nn.ReLU(inplace=True),
-                nn.Linear(trans_hidden, 3),   # (x, y, z)
-            )
+            self.translation_head = FullyConvTranslationHead(  # can be changed to ResNetTranslationHead
+                in_channels=c, hidden_channels=256, num_blocks=2)
         else:
             self.translation_head = None
 
