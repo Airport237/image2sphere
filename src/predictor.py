@@ -82,7 +82,7 @@ class I2S(BaseSO3Predictor):
                 nn.ReLU(inplace=True),
                 nn.Linear(trans_hidden, 3),   # (x, y, z)
             )
-        elif self.translation_head is "conv":
+        elif self.translation_head == "conv":
             c, h, w = self.encoder.output_shape
             self.translation_head = None
         else:
