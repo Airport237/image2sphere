@@ -208,7 +208,8 @@ def main(args):
         args.lr_step_size,
         args.lr_decay_rate
     )
-
+    evaluate_speedplus_kelvins(args, model, test_loader)
+    return
     # resume if checkpoint exists (allow shape mismatches when you've changed the model)
     if os.path.exists(os.path.join(args.fdir, "checkpoint.pt")):
         checkpoint = torch.load(os.path.join(args.fdir, "checkpoint.pt"),
