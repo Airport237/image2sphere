@@ -165,7 +165,7 @@ class I2S(BaseSO3Predictor):
         # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = FullyConvTranslationHead(  # can be changed to ResNetTranslationHead
+            self.translation_head = ResNetTranslationHead(  # can be changed to ResNetTranslationHead
                 in_channels=c, hidden=128)
         else:
             self.translation_head = None
