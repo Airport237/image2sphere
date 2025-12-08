@@ -52,7 +52,7 @@ def create_dataloaders(args):
         test_set = SPEEDPLUSDataset(
             root=args.dataset_path,
             split=args.speedplus_test,
-            train=False
+            train=False,
             masks_flag=args.speedplus_masks
         )
     else:
