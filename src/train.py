@@ -376,7 +376,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
     all_pos_scores = []
 
     with torch.no_grad():
-        for batch in loader:
+        for index, batch in enumerate(loader):
             batch = {k: v.to(args.device) for k, v in batch.items()}
             img = batch['img']
             cls = batch['cls']
@@ -409,6 +409,7 @@ def evaluate_speedplus_kelvins(args, model, loader):
             pose_score, s_orient, s_pos = kelvins_pose_score(
                 t_pred, R_pred, t_gt, R_gt
             )
+            
 
             pose_score = torch.as_tensor(pose_score,  device='cpu').reshape(-1)
             s_orient = torch.as_tensor(s_orient,    device='cpu').reshape(-1)
@@ -417,6 +418,8 @@ def evaluate_speedplus_kelvins(args, model, loader):
             all_pose_scores.append(pose_score)
             all_orient_scores.append(s_orient)
             all_pos_scores.append(s_pos)
+            if index % 10 == 0:
+                print(f"Batch {index} / {len(loader)} processed.")
 
     all_pose_scores = np.array(all_pose_scores)
     all_orient_scores = np.array(all_orient_scores)
