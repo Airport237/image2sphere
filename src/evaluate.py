@@ -17,9 +17,6 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings('ignore', category=UserWarning)
 
 
-
-
-
 def create_dataloaders(args):
     if args.dataset_name.find('modelnet10') > -1:
         train_set = ModelNet10Dataset(args.dataset_path,
@@ -103,7 +100,6 @@ def create_model(args):
     return model
 
 
-
 def main(args):
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
@@ -137,13 +133,13 @@ def main(args):
     model = create_model(args)
     print("post model creatiion")
 
-
     # resume if checkpoint exists (allow shape mismatches when you've changed the model)
     if os.path.exists(os.path.join(args.fdir, "checkpoint.pt")):
         checkpoint = torch.load(os.path.join(args.fdir, "checkpoint.pt"),
                                 map_location=args.device)
         if checkpoint.get('done', False):
             print("Found completed checkpoint; exiting.")
+            model.load_state_dict(checkpoint['model_state_dict'], strict=False)
             evaluate_speedplus_kelvins(args, model, test_loader)
             return
         else:

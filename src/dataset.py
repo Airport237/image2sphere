@@ -124,7 +124,6 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
 
         self.imagefolder = 'images_768x512_RGB'
         dataset = "train" if train else "test"
-        #dataset = "test"
         csv_path = os.path.join(self.root, self.split,
                                 'labels', f"{dataset}.csv")
         self.csv = pd.read_csv(csv_path, header=None)
