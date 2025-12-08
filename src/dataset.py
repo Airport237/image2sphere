@@ -123,8 +123,7 @@ class SPEEDPLUSDataset(torch.utils.data.Dataset):
         self.input_size = [224, 224]   # (W, H)
 
         self.imagefolder = 'images_768x512_RGB'
-        # dataset = "train" if train else "test"
-        dataset = "test"
+        dataset = "train" if train else "test"
         csv_path = os.path.join(self.root, self.split,
                                 'labels', f"{dataset}.csv")
         self.csv = pd.read_csv(csv_path, header=None)
