@@ -149,7 +149,6 @@ def evaluate_error(args, model, test_loader):
 
     np.save(os.path.join(args.fdir, 'eval.npy'), per_class_err)
 
-
 def create_model(args):
     model = I2S(
         num_classes=args.num_classes,
@@ -163,9 +162,8 @@ def create_model(args):
         eval_grid_rec_level=args.eval_grid_rec_level,
         eval_use_gradient_ascent=args.eval_use_gradient_ascent,
         include_class_label=args.include_class_label,
-        pred_translation=True,  # set them hardcoded for now
-        trans_hidden=256,
-        trans_head=args.translation_head
+        pred_translation=True,  # enable translation head
+        trans_hidden=256,      
     ).to(args.device)
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
