@@ -105,9 +105,8 @@ def create_model(args):
         eval_grid_rec_level=args.eval_grid_rec_level,
         eval_use_gradient_ascent=args.eval_use_gradient_ascent,
         include_class_label=args.include_class_label,
-        pred_translation=True,
-        trans_hidden=256,
-        trans_head=args.translation_head,
+        pred_translation=True,  # enable translation head
+        trans_hidden=256,     
     ).to(args.device)
 
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -115,6 +114,7 @@ def create_model(args):
 
     model.train()
     return model
+
 
 
 def main(args):
