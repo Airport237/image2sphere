@@ -44,27 +44,28 @@ class BaseSO3Predictor(nn.Module):
 class EQNNTranslationHead(nn.Module):
     """
     Equivariant translation head using e3nn.
-    Maps irreps_in --> 1x1o (a true 3D vector).
+    Maps irreps_in --> Irreps("1x1o") (3D vector).
     """
 
     def __init__(self, irreps_in: Irreps, hidden_dim: int = 64):
         super().__init__()
 
-        # hidden = scalars + vectors (any mix works)
+        # mixed hidden rep: scalars + vectors
         irreps_hidden = Irreps(f"{hidden_dim}x0e + {hidden_dim}x1o")
 
         self.lin1 = o3.Linear(irreps_in, irreps_hidden)
 
-        # one activation per irrep type
+        # proper equivariant activation:
+        # scalars: ReLU, vectors: identity (no nonlinearity)
         self.act1 = Activation(
             irreps_hidden,
             acts={
-                "0e": torch.relu,   # scalar channels
-                "1o": torch.relu    # vector channels
+                "0e": torch.relu,     # scalars can use arbitrary nonlinearities
+                "1o": lambda x: x     # vectors must remain linear
             }
         )
 
-        # final layer → vector irrep (3D translation)
+        # output → true vector irrep ("1o")
         self.lin2 = o3.Linear(irreps_hidden, Irreps("1x1o"))
 
     def forward(self, x):
