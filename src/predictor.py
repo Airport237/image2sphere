@@ -199,9 +199,11 @@ class I2S(BaseSO3Predictor):
 
         # translation head (from encoder features only)
         if self.pred_translation:
-            c, h, w = self.encoder.output_shape
-            self.translation_head = EQNNTranslationHead(  # can be changed to ResNetTranslationHead
-                in_channels=c, hidden_channels=128)
+            # translation from equivariant sphere features
+            # same irreps used before o3_conv
+            irreps_feat = so3_utils.s2_irreps(lmax)
+            self.translation_head = EQNNTranslationHead(
+                irreps_feat, hidden_dim=64)
         else:
             self.translation_head = None
 
