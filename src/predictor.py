@@ -41,6 +41,39 @@ class BaseSO3Predictor(nn.Module):
         torch.save(self.state_dict(), path)
 
 
+class EQNNTranslationHead(nn.Module):
+    """
+    Equivariant translation prediction head using e3nn.
+    Maps irreps_in  ->  vector irrep "1o"  (3D translation).
+
+    Assumes input is an SO(3) feature tensor with irreps that include l>=0.
+    """
+
+    def __init__(self, irreps_in: Irreps, hidden_dim: int = 64):
+        super().__init__()
+
+        # hidden representation is arbitrary, but we use a mix of scalars & vectors
+        irreps_hidden = Irreps(f"{hidden_dim}x0e + {hidden_dim}x1o")
+
+        self.lin1 = o3.Linear(irreps_in, irreps_hidden)
+        self.act1 = Activation(irreps_hidden, acts=[F.relu])
+
+        # final layer → true 3D vector irrep (translation)
+        self.lin2 = o3.Linear(irreps_hidden, Irreps("1x1o"))
+
+    def forward(self, x):
+        """
+        x: (B, *, irreps_in.dim)
+        Returns: (B, 3) translation vector
+        """
+        x = self.lin1(x)
+        x = self.act1(x)
+        x = self.lin2(x)
+
+        # convert irreps output (B, 3) shape explicitly
+        return x
+
+
 class FullyConvTranslationHead(nn.Module):
     def __init__(self, in_channels, hidden=128):
         super().__init__()
@@ -167,7 +200,7 @@ class I2S(BaseSO3Predictor):
         # translation head (from encoder features only)
         if self.pred_translation:
             c, h, w = self.encoder.output_shape
-            self.translation_head = ResNetTranslationHead(  # can be changed to ResNetTranslationHead
+            self.translation_head = EQNNTranslationHead(  # can be changed to ResNetTranslationHead
                 in_channels=c, hidden_channels=128)
         else:
             self.translation_head = None
